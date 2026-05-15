@@ -1,0 +1,42 @@
+services:
+  hermes-webui:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ${WEBUI_IMAGE:-hermes-web-ui-local:latest}
+    container_name: ${WEBUI_CONTAINER_NAME:-hermes-webui}
+    command: ["dist/server/index.js"]
+    ports:
+      - "${PORT:-6060}:${PORT:-6060}"
+    volumes:
+      - ${HERMES_DATA_DIR:-./hermes_data}:/home/agent/.hermes
+      - ${HERMES_DATA_DIR:-./hermes_data}/hermes-web-ui:/home/agent/.hermes-web-ui
+    environment:
+      - PORT=${PORT:-6060}
+      - HERMES_HOME=/home/agent/.hermes
+      - HERMES_BIN=/opt/hermes/.venv/bin/hermes
+      - AUTH_DISABLED=${AUTH_DISABLED:-false}
+      - HERMES_ALLOW_ROOT_GATEWAY=1
+    restart: unless-stopped
+    stdin_open: true
+    tty: true
+
+  hxa-worker-bot:
+    image: ${WEBUI_IMAGE:-hermes-web-ui-local:latest}
+    container_name: ${WORKER_BOT_CONTAINER_NAME:-hxa-worker-bot}
+    profiles:
+      - worker
+    command: ["dist/worker-bot/index.js"]
+    volumes:
+      - ${HERMES_DATA_DIR:-./hermes_data}:/home/agent/.hermes
+      - ${HERMES_DATA_DIR:-./hermes_data}/hermes-web-ui:/home/agent/.hermes-web-ui
+    environment:
+      - HXA_URL=${HXA_URL:-http://hxa-connect:4800}
+      - HXA_TOKEN=${HXA_TOKEN}
+      - TARGET_BOT=${TARGET_BOT:-zylos-main}
+      - BOT_NAME=${BOT_NAME:-worker-bot}
+      - KANBAN_BOARD=${KANBAN_BOARD:-default}
+      - HERMES_HOME=/home/agent/.hermes
+      - HERMES_BIN=/opt/hermes/.venv/bin/hermes
+      - HERMES_PROFILE=${BOT_NAME:-worker-bot}
+    restart: unless-stopped
