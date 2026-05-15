@@ -1,0 +1,457 @@
+# BeatyClaw 数字员工
+
+BeatyClaw 数字员工是基于 `Yoyoo0.1 / hermes-web-ui` 改造出来的单用户 AI 工作台。当前目标不是做一个完整对外售卖的 SaaS，而是先把苏白自己的 Agent 工作台跑通：对话、历史、任务、看板、频道连接、技能、记忆、用量，以及外部平台消息进入多 Agent 后端的闭环。
+
+当前线上入口：`https://agent.aibosss.com`
+
+## 项目定位
+
+第一期产品形态：
+
+- 单用户工作台，不做注册、不做多租户、不做套餐支付。
+- 模型 API Key、hxa-connect、zylos-main、worker-bot、GPT-5.5 等运行环境由平台内置。
+- 用户只在“频道 / 链接”里填写外部平台连接信息，例如微信、Telegram、飞书。
+- 前端沿用 Yoyoo0.1 的工作台结构，但品牌和产品语义收口到 BeatyClaw 数字员工。
+
+我们当前不是简单部署原版 Hermes Web UI，而是在它的 UI 和基础能力上恢复 COCO / Zylos / hxa-connect 的产品能力。
+
+## 当前架构
+
+```text
+外部入口：微信 / Telegram / 飞书
+        ↓
+BeatyClaw 数字员工 Web 工作台
+        ↓
+Agentic runtime adapter
+        ↓
+hxa-connect
+        ↓
+zylos-main
+        ↓
+worker-bot / hxa 多 Agent
+        ↓
+GPT-5.5
+        ↓
+返回到工作台或外部渠道
+```
+
+当前线上容器：
+
+- `agentic`：Web UI + Koa BFF + 微信/Telegram runtime。
+- `hxa-connect`：多 Agent 消息总线。
+- `zylos`：主 Agent / zylos-main。
+- `hxa-worker-bot`：worker-bot 执行侧。
+
+## 技术栈
+
+- Frontend：Vue 3 + TypeScript + Vite + Naive UI。
+- Backend：Node.js + Koa + TypeScript。
+- Runtime：Agentic adapter + hxa-connect + zylos-main + worker-bot。
+- Storage：当前沿用本地 SQLite / Hermes profile 文件体系。
+- Build：`npm run build` 输出到 `dist/`。
+- Deploy：Docker 镜像 `agentic-yoyoo-saas:latest`。
+
+## 已完成的阶段性成果
+
+### 1. 工作台产品边界
+
+已明确第一期范围：
+
+- 登录
+- 对话
+- 历史
+- 任务
+- 看板
+- 频道 / 链接
+- 技能
+- 记忆
+- 用量
+
+暂不做：
+
+- 多租户
+- 注册邀请
+- 支付套餐
+- 团队管理后台
+- 用户自带模型 Key
+- 完整 Skill 市场
+- PostgreSQL 生产迁移
+
+详细背景见：
+
+- `Product-Spec.md`
+- `DEV-PLAN.md`
+- `开发过程/000_Roadmap.md`
+
+### 2. 品牌替换
+
+当前前端品牌已改成：
+
+```text
+BeatyClaw 数字员工
+```
+
+已替换位置：
+
+- 页面标题
+- 登录页标题
+- 侧边栏品牌名
+- 主头像资源 `/logo.png`
+- 聊天助手头像
+- 空会话头像
+- 中文 / 英文基础 i18n 标题文案
+
+头像来源：`/Users/subai/A/A_subai/AIcode/Test/Agent/Test0.02coco/中转/6b1403cc-79ae-44f0-83ed-227bc3fe0433.png`
+
+### 3. 登录
+
+已完成单用户登录：
+
+- 登录接口：`/api/yoyoo/auth/login`
+- 当前线上账号由 owner 配置控制。
+- 未登录不能进入工作台。
+- 登录后默认进入对话页。
+- 登出后清理本地状态并回到登录页。
+
+### 4. 对话 / 历史
+
+保留现有 Hermes-compatible 聊天与历史能力，同时逐步接入 Agentic runtime。
+
+当前状态：
+
+- 工作台对话页可用。
+- 历史会话可查看。
+- 会话搜索可用。
+- 对话接口正在向 `zylos-main -> worker-bot -> GPT-5.5` 的正式链路收口。
+
+### 5. 任务 / 看板
+
+已保留并验证 Kanban / task 能力。
+
+当前能力：
+
+- 看板页面可用。
+- Kanban service 有测试覆盖。
+- hxa-main 能创建和驱动任务。
+- worker-bot 能消费任务并返回执行结果。
+
+### 6. hxa-connect / zylos-main / worker-bot 链路
+
+已从最小主 Agent 推进到多 Agent 执行链路：
+
+```text
+BeatyClaw / Agentic
+→ zylos-main
+→ hxa-connect
+→ worker-bot
+→ GPT-5.5
+→ 返回
+```
+
+阶段性完成：
+
+- `zylos-main` 不再只是直接 GPT 回复。
+- 已接入 worker-bot 执行路径。
+- 已有 hxa-main runtime 测试。
+- 已有 hxa-connect API 测试。
+
+## 频道 / 连接器进度
+
+频道页是当前产品最重要的外部入口。当前页面顶部有“外部连接器概览”，底部保留详细平台配置。
+
+### 微信：已跑通真实闭环
+
+当前状态：已配置，runtime 运行中。
+
+已完成：
+
+- 微信扫码绑定。
+- 微信账号配置保存。
+- Agentic 微信 runtime 长轮询。
+- 微信消息进入 `hxa/zylos-main`。
+- worker-bot / GPT-5.5 生成回复。
+- Agentic 把回复发回微信。
+- 用户已经在微信里看到回复。
+
+正式流程：
+
+```text
+微信
+→ Agentic weixin-runtime
+→ hxa-connect / zylos-main
+→ worker-bot / GPT-5.5
+→ Agentic weixin-runtime
+→ 微信回复
+```
+
+关键实现：
+
+- `packages/server/src/services/agentic/weixin-runtime.ts`
+- `packages/server/src/controllers/hermes/weixin.ts`
+- `packages/server/src/routes/hermes/weixin.ts`
+- `packages/client/src/views/hermes/ChannelsView.vue`
+
+### Telegram：代码完成，等待真实 Bot Token
+
+当前状态：runtime 已接入，线上未配置真实 `TELEGRAM_BOT_TOKEN`。
+
+已完成：
+
+- 复用现有 Telegram Bot Token 配置入口。
+- `Agentic` 启动时读取 `TELEGRAM_BOT_TOKEN`。
+- 保存 Token 后 runtime 热启动，不需要重启容器。
+- Telegram Bot API `getUpdates` 长轮询代码已接入。
+- Telegram Bot API `sendMessage` 回复代码已接入。
+- 入站消息会进入 `createHxaMainAgentRun()`。
+- `/api/hermes/telegram/status` 已上线。
+- 频道页 Telegram 卡片接入 runtime 状态。
+- 假 Token 负向验证通过：保存后 runtime 启动，并正确显示 Telegram `401 Unauthorized`，清空后无残留。
+
+未完成：
+
+- 缺真实 Telegram Bot Token。
+- 还没有真实 Telegram 消息进入 hxa/zylos-main 的证据。
+- 还没有真实 Telegram 回复发回客户端的证据。
+- 频道页还不能显示 Telegram `已连接，runtime 运行中`。
+
+真实验收步骤：
+
+1. 在频道页 Telegram 卡片保存真实 Bot Token。
+2. 调用 `/api/hermes/telegram/status`，确认：
+   - `configured=true`
+   - `runtime.running=true`
+   - `runtime.bot_username` 有值
+   - `runtime.last_error` 为空
+3. 用 Telegram 给该 bot 发消息。
+4. 确认：
+   - `messages_received` 增加
+   - `messages_forwarded` 增加
+   - `replies_sent` 增加
+5. 检查 Telegram 客户端收到回复。
+6. 频道页 Telegram 卡片显示 `已连接，runtime 运行中`。
+
+关键实现：
+
+- `packages/server/src/services/agentic/telegram-runtime.ts`
+- `packages/server/src/controllers/hermes/telegram.ts`
+- `packages/server/src/routes/hermes/telegram.ts`
+- `packages/server/src/controllers/hermes/config.ts`
+- `tests/server/telegram-runtime.test.ts`
+
+### 飞书：配置入口保留，runtime 未接
+
+当前状态：保留 App ID / App Secret 配置入口，暂未接真实运行时。
+
+原因：
+
+- 飞书需要开放平台应用、事件订阅、回调地址、challenge 校验、权限配置。
+- 比 Telegram 更适合在微信和 Telegram 闭环稳定后接入。
+
+### 其他平台
+
+页面中仍保留：
+
+- Discord
+- Slack
+- WhatsApp
+- Matrix
+- WeCom
+
+这些目前主要是原 Hermes/Yoyoo 的配置入口，不等于已完成真实收发 runtime。
+
+## 我们研究后的判断
+
+### Zylos / COCO / hxa-connect 的关系
+
+当前理解：
+
+- COCO 更像完整商业产品，有官网、注册登录、支付、文档、案例和 FAQ。
+- Zylos 更像产品底层和能力集合，有多平台连接器和 Agent runtime 能力，但不是完整运营型 SaaS。
+- hxa-connect 是多 Agent 消息总线，负责 agent 和 agent 之间通信，不负责微信 / Telegram / 飞书平台适配。
+- OpenClaw 更偏执行器 / browser automation，不是当前 BeatyClaw 工作台的产品入口。
+- Hermes Web UI / Yoyoo0.1 是工作台 UI 底座。
+
+所以当前路线不是“重写 COCO”，而是：
+
+```text
+用 Yoyoo0.1 的前端工作台
+接入 Zylos / hxa-connect / worker-bot 的后端能力
+逐步恢复 COCO 类产品体验
+```
+
+### 为什么先微信，再 Telegram，再飞书
+
+微信优先：
+
+- 当前项目已有微信二维码和保存配置接口。
+- 已完成真实消息闭环。
+- 最贴近国内用户工作流。
+
+Telegram 第二：
+
+- 技术链路轻，只需要 Bot Token。
+- `getUpdates` + `sendMessage` 适合快速验证第二个外部入口。
+- 当前代码已完成，只等真实 Token。
+
+飞书第三：
+
+- 企业场景价值高。
+- 但开放平台配置和回调验证成本更高。
+
+## 当前线上状态
+
+线上地址：
+
+```text
+https://agent.aibosss.com
+```
+
+已部署：
+
+- `agentic` 容器
+- `hxa-connect` 容器
+- `zylos` 容器
+- `hxa-worker-bot` 容器
+
+已验证：
+
+- `/health` 可访问。
+- 微信 runtime 运行中。
+- 微信真实消息已收到回复。
+- Telegram status 接口可访问，但因无真实 Token 显示未配置。
+- 频道页已显示：`微信已跑通完整闭环；Telegram runtime 已接入，保存 Bot Token 后启动；飞书保留配置入口。`
+
+## 本地开发
+
+安装依赖：
+
+```bash
+npm install
+```
+
+开发启动：
+
+```bash
+npm run dev
+```
+
+构建：
+
+```bash
+npm run build
+```
+
+常用测试：
+
+```bash
+npm run test -- tests/server/agentic-runtime.test.ts tests/server/hxa-main-runtime.test.ts tests/server/hermes-kanban-service.test.ts tests/server/hxa-connect.test.ts tests/client/hxa-api.test.ts tests/server/weixin-runtime.test.ts tests/server/telegram-runtime.test.ts
+```
+
+当前已通过的验证记录：
+
+- 7 个测试文件通过。
+- 52 个测试通过。
+- `npm run build` 通过。
+- Docker 镜像构建通过。
+- 线上容器重建通过。
+
+## 部署说明
+
+当前部署方式是构建 Docker 镜像：
+
+```bash
+docker build -t agentic-yoyoo-saas:latest .
+```
+
+线上 `agentic` 容器使用：
+
+- `dist/server/index.js`
+- 端口：`3457`
+- 反代域名：`https://agent.aibosss.com`
+- Hermes 数据挂载：`/home/agent/.hermes`
+- Web UI 数据挂载：`/home/agent/.hermes-web-ui`
+
+注意：
+
+- 不要提交 `.env`、`hermes_data/`、`data/`、`dist/`、`node_modules/`。
+- 不要把服务器密码、OpenAI Key、Telegram Token、微信 Token 写进代码或 README。
+- README 只记录状态和验收方式，不记录真实密钥。
+
+## 关键目录
+
+```text
+packages/client/src/views/hermes/ChannelsView.vue      频道页主界面
+packages/client/src/components/layout/AppSidebar.vue   左侧导航品牌
+packages/client/public/logo.png                        当前头像/logo
+packages/server/src/services/agentic/weixin-runtime.ts 微信 runtime
+packages/server/src/services/agentic/telegram-runtime.ts Telegram runtime
+packages/server/src/controllers/hermes/config.ts       平台凭据保存
+packages/server/src/controllers/hermes/weixin.ts       微信状态/二维码/保存
+packages/server/src/controllers/hermes/telegram.ts     Telegram 状态
+tests/server/weixin-runtime.test.ts                    微信 runtime 测试
+tests/server/telegram-runtime.test.ts                  Telegram runtime 测试
+开发过程/010_Connectors_Runtime.md                      连接器实现过程记录
+```
+
+## 下一步建议
+
+### P0：Telegram 真实闭环
+
+阻塞项：真实 Telegram Bot Token。
+
+拿到 Token 后立即验收：
+
+```text
+Telegram -> Agentic -> hxa/zylos-main -> worker-bot/GPT-5.5 -> Telegram 回复
+```
+
+### P1：飞书 runtime
+
+接入飞书需要先准备：
+
+- 飞书开放平台应用
+- App ID / App Secret
+- 事件订阅
+- 回调地址
+- challenge 校验
+- 权限配置
+
+### P1：频道页产品化
+
+继续优化：
+
+- 连接器状态分级：未配置 / 已保存 / 运行中 / 错误。
+- 错误说明更人话。
+- 密钥只在点击配置时显示输入框。
+- 顶部概览继续只显示系统级状态。
+
+### P2：SaaS 化
+
+后续再做：
+
+- 多用户 / 多租户
+- 计费和用量额度
+- 团队空间
+- 用户自助配置渠道
+- 更完整的 Skill 安装和管理
+- PostgreSQL 生产化迁移
+
+## 当前交接结论
+
+BeatyClaw 数字员工已经不是原版 Hermes Web UI demo，而是一个正在形成闭环的单用户 AI 工作台：
+
+- UI 工作台已经可用。
+- 微信真实闭环已经跑通。
+- hxa / zylos-main / worker-bot / GPT-5.5 的主链路已经接入。
+- Telegram runtime 已完成到等待真实 Token 的阶段。
+- 飞书和其他平台保留配置入口，后续按优先级接 runtime。
+
+接手同事优先看：
+
+1. `README.md`
+2. `Product-Spec.md`
+3. `DEV-PLAN.md`
+4. `开发过程/010_Connectors_Runtime.md`
+5. `packages/server/src/services/agentic/weixin-runtime.ts`
+6. `packages/server/src/services/agentic/telegram-runtime.ts`
+7. `packages/client/src/views/hermes/ChannelsView.vue`
