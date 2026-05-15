@@ -826,3 +826,64 @@ hxa-connect    hxa-connect-hxa-connect     Up
 ### 结论
 
 线上频道页没有换头像和名字的原因不是页面代码遗漏，而是代码只提交到了 GitHub，没有重新部署到服务器。现在公网已更新到 BeatyClaw 品牌版本。
+
+## 2026-05-16 微信绑定后无回复修复
+
+### 现象
+
+用户在频道页完成微信绑定后，`/api/hermes/weixin/status` 显示微信已经配置：
+
+```text
+configured=true
+account_id=aaa9ce74b7fc@im.bot
+runtime.configured=true
+runtime.running=false
+```
+
+但微信端发消息没有收到回复。
+
+### 根因
+
+服务启动时 `.env` 里还没有微信凭证，因此启动日志出现：
+
+```text
+[weixin-runtime] disabled or missing account/token
+```
+
+后来用户扫码绑定成功，后端只把 `WEIXIN_ACCOUNT_ID` / `WEIXIN_TOKEN` 写入 `.env`，没有同步启动微信消息轮询 runtime。
+
+这导致状态上“已配置”，但真实负责收消息、转发到 hxa/zylos-main、再发回微信的 `weixin-runtime` 没有运行。
+
+### 修复
+
+- `POST /api/hermes/weixin/save` 保存微信配置后，立即调用 `startWeixinRuntime()`。
+- 保存接口返回最新 `runtime` 状态，方便前端和排查确认。
+- 服务启动后增加微信 runtime 看门狗：
+  - 每 30 秒检查一次。
+  - 如果检测到 `configured=true` 且 `running=false`，自动重新启动微信 runtime。
+  - 默认间隔可通过 `WEIXIN_RUNTIME_WATCHDOG_MS` 调整；设置为 `0` 可关闭。
+
+### 验证
+
+本地验证：
+
+```bash
+npm run test -- tests/server/weixin-runtime.test.ts tests/server/hxa-main-runtime.test.ts
+npm run build
+```
+
+结果：
+
+```text
+26 tests passed
+production build passed
+```
+
+线上验收重点：
+
+- `/api/hermes/weixin/status` 中 `runtime.running=true`。
+- 微信发新消息后：
+  - `messages_received` 增加。
+  - `messages_forwarded` 增加。
+  - `replies_sent` 增加。
+- 微信客户端收到 BeatyClaw 数字员工回复。

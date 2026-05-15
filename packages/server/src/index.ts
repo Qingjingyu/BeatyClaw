@@ -162,8 +162,21 @@ export async function bootstrap() {
   chatRunServer.init()
   const { startZylosMainRuntime } = await import('./services/agentic/hxa-main-runtime')
   await startZylosMainRuntime()
-  const { startWeixinRuntime } = await import('./services/agentic/weixin-runtime')
+  const { getWeixinRuntimeStatus, startWeixinRuntime } = await import('./services/agentic/weixin-runtime')
   startWeixinRuntime()
+  console.log('[bootstrap] weixin runtime status:', JSON.stringify(getWeixinRuntimeStatus()))
+  const weixinRuntimeWatchdogMs = Number(process.env.WEIXIN_RUNTIME_WATCHDOG_MS || 30000)
+  if (weixinRuntimeWatchdogMs > 0) {
+    const weixinRuntimeWatchdog = setInterval(() => {
+      const status = getWeixinRuntimeStatus()
+      if (status.configured && !status.running) {
+        console.log('[bootstrap] weixin runtime stopped; restarting')
+        startWeixinRuntime()
+        console.log('[bootstrap] weixin runtime restart status:', JSON.stringify(getWeixinRuntimeStatus()))
+      }
+    }, weixinRuntimeWatchdogMs)
+    weixinRuntimeWatchdog.unref?.()
+  }
   const { startTelegramRuntime } = await import('./services/agentic/telegram-runtime')
   startTelegramRuntime()
 

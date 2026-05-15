@@ -3,7 +3,7 @@ import { readFile, writeFile, chmod } from 'fs/promises'
 import { getGatewayManagerInstance } from '../../services/gateway-bootstrap'
 import { getActiveEnvPath } from '../../services/hermes/hermes-profile'
 import { restartGateway } from '../../services/hermes/hermes-cli'
-import { getWeixinRuntimeStatus } from '../../services/agentic/weixin-runtime'
+import { getWeixinRuntimeStatus, startWeixinRuntime } from '../../services/agentic/weixin-runtime'
 
 const ILINK_BASE = 'https://ilinkai.weixin.qq.com'
 const envPath = () => getActiveEnvPath()
@@ -121,7 +121,8 @@ export async function save(ctx: any) {
     await writeFile(ep, output, 'utf-8')
     try { await chmod(ep, 0o600) } catch { }
     await restartGateway()
-    ctx.body = { success: true }
+    startWeixinRuntime()
+    ctx.body = { success: true, runtime: getWeixinRuntimeStatus() }
   } catch (err: any) {
     ctx.status = 500; ctx.body = { error: err.message }
   }
