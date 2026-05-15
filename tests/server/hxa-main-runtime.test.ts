@@ -14,6 +14,7 @@ import {
   resolveExplicitKanbanTask,
   resolveKanbanTaskForRequest,
   buildWorkerTask,
+  shouldDispatchWorker,
   shouldMainCompleteKanbanTask,
   shouldCreateKanbanTask,
 } from '../../packages/server/src/services/agentic/hxa-main-runtime'
@@ -108,11 +109,32 @@ describe('zylos-main hxa runtime', () => {
     expect(messages[1].content).toContain('当前状态正常')
   })
 
+  it('builds normal chat context without pretending worker-bot timed out', () => {
+    const messages = buildMainAgentMessages(
+      'agentic-client',
+      '你是谁',
+      null,
+      null,
+    )
+
+    expect(messages[0].content).toContain('普通问答直接回答')
+    expect(messages[1].content).toContain('本次是普通对话，没有派发 worker-bot')
+    expect(messages[1].content).not.toContain('超时时间')
+  })
+
   it('detects actionable requests that should be captured as kanban tasks', () => {
     expect(shouldCreateKanbanTask('帮我把官网改版拆成任务')).toBe(true)
     expect(shouldCreateKanbanTask('记录一下：明天检查微信连接')).toBe(true)
     expect(shouldCreateKanbanTask('请记住：Agentic 默认模型是 GPT-5.5')).toBe(true)
     expect(shouldCreateKanbanTask('你好，今天怎么样')).toBe(false)
+  })
+
+  it('dispatches worker-bot only for actionable work, not normal chat', () => {
+    expect(shouldDispatchWorker('你好')).toBe(false)
+    expect(shouldDispatchWorker('你是谁')).toBe(false)
+    expect(shouldDispatchWorker('帮我把官网改版拆成任务')).toBe(true)
+    expect(shouldDispatchWorker('继续执行剩余任务')).toBe(true)
+    expect(shouldDispatchWorker('继续执行 t_957c24fa')).toBe(true)
   })
 
   it('builds a kanban task draft from user request and worker result', () => {
@@ -154,6 +176,14 @@ describe('zylos-main hxa runtime', () => {
     expect(reply).toContain('worker-bot 已处理')
     expect(reply).toContain('task-123')
     expect(reply).toContain('GPT-5.5')
+  })
+
+  it('builds a plain fallback reply for normal chat without worker noise', () => {
+    const reply = buildFallbackReply('你好', null, null)
+
+    expect(reply).toContain('我收到你的消息了')
+    expect(reply).toContain('当前 GPT 回复服务暂时不可用')
+    expect(reply).not.toContain('worker-bot')
   })
 
   it('builds a kanban completion summary from worker result', () => {

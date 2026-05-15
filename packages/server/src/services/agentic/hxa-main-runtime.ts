@@ -138,6 +138,12 @@ export function shouldContinueRememberedKanbanTask(content: string): boolean {
     /(执行|处理|完成).*(所有|全部|全部的|剩余全部|所有剩余).*(剩余|子任务|任务)|把.*(剩余|子任务|任务).*(全部|全都|都).*(执行|处理|完成).*(完)?/.test(normalized)
 }
 
+export function shouldDispatchWorker(content: string): boolean {
+  return shouldCreateKanbanTask(content) ||
+    shouldContinueRememberedKanbanTask(content) ||
+    Boolean(resolveExplicitKanbanTask(content, 'default'))
+}
+
 function getRememberedKanbanTaskStorePath(): string {
   const configuredPath = process.env.ZYLOS_MAIN_TASK_MEMORY_FILE?.trim()
   if (configuredPath) return configuredPath
@@ -344,13 +350,20 @@ export function buildMainAgentMessages(
   workerResult: string | null,
   kanbanTask?: KanbanTaskContext | null,
 ): Array<{ role: string; content: string }> {
+  const workerContext = workerResult
+    ? workerResult
+    : kanbanTask
+      ? 'worker-bot 在本次超时时间内没有返回结果，请基于用户请求和看板任务直接回复，并说明 worker 暂未返回。'
+      : '本次是普通对话，没有派发 worker-bot。请直接回答用户，不要提 worker-bot、看板或内部调度。'
+
   return [
     {
       role: 'system',
       content: [
         '你是 Agentic 的 zylos-main 主 Agent。',
         '你负责接收用户入口发来的请求，并协调 worker-bot 完成任务。',
-        '如果 worker-bot 已返回结果，要基于 worker 结果给用户做清晰汇总。',
+        '普通问答直接回答，不要硬扯 worker-bot、看板、任务或内部链路。',
+        '只有 worker-bot 已返回结果时，才基于 worker 结果给用户做清晰汇总。',
         '回复要简短、直接、中文。',
       ].join('\n'),
     },
@@ -361,7 +374,7 @@ export function buildMainAgentMessages(
         content,
         '',
         'worker-bot 返回：',
-        workerResult || 'worker-bot 在本次超时时间内没有返回结果，请基于用户请求直接回复，并说明 worker 暂未返回。',
+        workerContext,
         '',
         '看板任务：',
         kanbanTask ? `${kanbanTask.id} / ${kanbanTask.title} / board=${kanbanTask.board}` : '本次没有创建看板任务。',
@@ -371,6 +384,16 @@ export function buildMainAgentMessages(
 }
 
 export function buildFallbackReply(content: string, workerResult: string | null, kanbanTask: KanbanTaskContext | null): string {
+  if (!workerResult && !kanbanTask) {
+    return [
+      '我收到你的消息了。',
+      '',
+      `你说的是：${content}`,
+      '',
+      '当前 GPT 回复服务暂时不可用，等服务恢复后我可以继续正常回答。',
+    ].join('\n')
+  }
+
   return [
     'worker-bot 已处理本次请求，但 GPT-5.5 当前暂时不可用，先返回已确认的执行状态。',
     '',
@@ -570,7 +593,9 @@ export async function startZylosMainRuntime(): Promise<void> {
 
         try {
           const kanbanTask = await createKanbanTaskFromRequest(config, from, content, null)
-          const workerResult = await dispatchWorkerTask(config, from, content, kanbanTask)
+          const workerResult = shouldDispatchWorker(content)
+            ? await dispatchWorkerTask(config, from, content, kanbanTask)
+            : null
           if (kanbanTask && workerResult?.includes('worker_skill=kanban.split')) {
             rememberKanbanTaskForSender(from, kanbanTask)
           }
