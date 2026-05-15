@@ -788,3 +788,41 @@ npm run build
 8. 打开频道页确认 Telegram 卡片显示 `已连接，runtime 运行中`。
 
 只有上述 8 步全部通过，Telegram runtime MVP 才能标记完成。
+
+## 2026-05-16 BeatyClaw Branding Deployment
+
+### 背景
+
+频道页 `https://agent.aibosss.com/#/hermes/channels` 仍显示旧的 `Agentic` 标题和旧头像。排查后确认本地代码已改成 `BeatyClaw 数字员工`，但线上仍在运行旧 Docker 构建。
+
+### 处理
+
+- 同步本地最新源码到服务器 `/home/ubuntu/agent-stack/agentic-src`。
+- 重新构建 Docker 镜像 `agentic-yoyoo-saas:latest`。
+- 先启动临时验证容器 `agentic-verify` 到 `127.0.0.1:3458`。
+- 验证通过后，温和停止旧 `agentic` 容器并改名备份。
+- 使用新镜像启动正式 `agentic` 容器。
+- 同步滚动 `hxa-worker-bot` 到同一版镜像，避免主服务和 worker 代码版本不一致。
+- 清理临时验证容器。
+
+### 验证
+
+公网验证通过：
+
+```text
+https://agent.aibosss.com/ -> <title>BeatyClaw 数字员工</title>
+https://agent.aibosss.com/logo.png -> PNG image data, 1254 x 1254
+public asset -> /assets/js/index-CxsTSyS_.js
+```
+
+容器验证通过：
+
+```text
+agentic        agentic-yoyoo-saas:latest   Up
+hxa-worker-bot agentic-yoyoo-saas:latest   Up
+hxa-connect    hxa-connect-hxa-connect     Up
+```
+
+### 结论
+
+线上频道页没有换头像和名字的原因不是页面代码遗漏，而是代码只提交到了 GitHub，没有重新部署到服务器。现在公网已更新到 BeatyClaw 品牌版本。
