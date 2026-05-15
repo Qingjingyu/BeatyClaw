@@ -741,6 +741,66 @@ npm run build
 
 - 这是 runtime 级持久化，不是完整长期记忆系统。
 - 当前仍按 `agentic-client` 入口身份记忆；第一期单用户可用，多用户阶段需要按真实用户/session 隔离。
+
+## 2026-05-16 Normal Chat Routing Fix
+
+### 背景
+
+线上普通聊天回复质量很差，例如用户发送“你好 / 你是谁”时，系统会先把消息派给 `worker-bot`，而 `worker-bot` 对非任务型消息只会返回：
+
+```text
+[worker-reply] 收到：...
+```
+
+随后 `zylos-main` 再把这个低质量回执交给 GPT 汇总，导致最终回复显得机械、空泛。
+
+### 根因
+
+`zylos-main` 之前对所有用户消息都执行：
+
+```text
+用户消息 -> zylos-main -> worker-bot -> GPT 汇总 -> 用户
+```
+
+这对任务、记忆、看板执行是合理的，但对普通对话不合理。普通问答应该直接由 `zylos-main / GPT-5.5` 回复，不需要 worker-bot 参与。
+
+### 修复
+
+- 新增 `shouldDispatchWorker(content)`：
+  - 任务创建 / 拆解类请求：派发 worker。
+  - 记忆写入类请求：派发 worker。
+  - 继续执行 / 执行全部剩余任务：派发 worker。
+  - 显式包含 `t_xxx` 看板任务 ID：派发 worker。
+  - 普通聊天，例如“你好”“你是谁”：不派发 worker。
+- 普通聊天 prompt 改成：
+  - 明确说明本次没有派发 worker-bot。
+  - 要求直接回答用户。
+  - 不提 worker-bot、看板或内部调度。
+- 普通聊天的 GPT fallback 也去掉 worker-bot 文案。
+
+### 验证
+
+本地测试：
+
+```bash
+npm run test -- tests/server/hxa-main-runtime.test.ts tests/server/agentic-runtime.test.ts tests/worker-bot/kanban-worker.test.ts
+npm run build
+```
+
+结果：
+
+- 3 个测试文件通过。
+- 45 个测试通过。
+- 构建通过。
+
+线上验证：
+
+```text
+输入：你是谁
+输出：我是你的 AI 助手，可以帮你回答问题、整理信息、写作、分析和处理日常任务。
+```
+
+worker-bot 日志中没有收到这条普通聊天任务，只保留上线消息，说明普通聊天已经绕过 worker-bot。
 - 当前只持久化“最近父任务”，不是任务历史列表。
 
 ## Worker kanban.execute_all Skill
