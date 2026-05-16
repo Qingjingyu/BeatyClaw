@@ -28,10 +28,10 @@ import { updateUsage } from '../../db/hermes/usage-store'
 import { logger } from '../logger'
 import {
   buildAgenticChatCompletionBody,
-  createHxaMainAgentRun,
   getAgenticRuntimeTarget,
   mapOpenAIChatCompletionChunk,
 } from '../agentic/runtime'
+import { createRuntimeAdapter } from '../agentic/runtime-sdk'
 import { getYoyooSessionCookieName, getYoyooUserBySession } from '../yoyoo-auth'
 
 /**
@@ -928,7 +928,14 @@ export class ChatRunSocket {
       body.stream = true
       body.store = false
 
-      const hxaRun = agenticRuntime ? await createHxaMainAgentRun(input) : null
+      const hxaRun = agenticRuntime
+        ? await createRuntimeAdapter('zylos').sendMessage({
+          sessionId: session_id,
+          channel: 'web',
+          text: input,
+          metadata: { profile, model },
+        })
+        : null
       if (hxaRun) {
         const state = session_id ? this.sessionMap.get(session_id) : undefined
         if (state && runMarker) {

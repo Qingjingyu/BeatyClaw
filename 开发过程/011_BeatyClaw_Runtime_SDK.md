@@ -124,6 +124,13 @@ createRuntimeAdapter('zylos').sendMessage(...)
 - 任务型聊天仍能进入 hxa/zylos-main。
 - 现有 hxa runtime 测试通过。
 
+本轮已完成：
+
+- `ChatRunSocket` 不再直接 import / 调用 `createHxaMainAgentRun()`。
+- Web 对话入口改为调用 `createRuntimeAdapter('zylos').sendMessage(...)`。
+- `ZylosRuntimeAdapter.sendMessage()` 在 hxa/zylos 未配置时返回 `null`，保留原有 GPT-5.5 直连 fallback。
+- 产品层开始面向 Runtime SDK，而不是直接依赖 hxa/zylos 细节。
+
 ### Phase 2：连接器入口接 SDK
 
 把微信、Telegram 入站消息统一改成：

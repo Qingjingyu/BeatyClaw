@@ -36,6 +36,14 @@ describe('BeatyClaw runtime SDK', () => {
     })
   })
 
+  it('returns null from the Zylos adapter when the current HXA path is not configured', async () => {
+    const runtime = createZylosRuntimeAdapter({
+      runMainAgent: async () => null,
+    })
+
+    await expect(runtime.sendMessage({ text: 'hello' })).resolves.toBeNull()
+  })
+
   it('reports planned providers as unsupported instead of leaking product logic into callers', async () => {
     const runtime = createRuntimeAdapter('openclaw')
 

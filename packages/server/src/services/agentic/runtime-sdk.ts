@@ -29,7 +29,7 @@ export interface RuntimeStatus {
 
 export interface BeatyClawRuntime {
   readonly provider: BeatyClawRuntimeProvider
-  sendMessage(input: RuntimeMessageInput): Promise<RuntimeMessageResult>
+  sendMessage(input: RuntimeMessageInput): Promise<RuntimeMessageResult | null>
   getStatus(): RuntimeStatus
 }
 
@@ -43,11 +43,9 @@ export function createZylosRuntimeAdapter(options: ZylosRuntimeAdapterOptions = 
   return {
     provider: 'zylos',
 
-    async sendMessage(input: RuntimeMessageInput): Promise<RuntimeMessageResult> {
+    async sendMessage(input: RuntimeMessageInput): Promise<RuntimeMessageResult | null> {
       const run = await runMainAgent(input.text)
-      if (!run) {
-        throw new Error('Zylos runtime is not configured')
-      }
+      if (!run) return null
 
       return {
         id: run.id,
