@@ -47,6 +47,10 @@ Conversation Hub / Runtime SDK
 - Build：`npm run build` 输出到 `dist/`。
 - Deploy：Docker 镜像 `agentic-yoyoo-saas:latest`。
 
+生产部署交接见：
+
+- `docs/beautyclaw-deployment.md`
+
 ## 已完成的阶段性成果
 
 ### 1. 工作台产品边界
@@ -167,12 +171,17 @@ BeatyClaw / Agentic
 - Conversation Hub 写入用户消息、AI 回复、usage 和 runtime trace。
 - Socket.IO 仍向前端发送 `run.started`、`message.delta`、`run.completed` / `run.failed`，保持聊天 UI 的即时反馈。
 - 历史 / 监控详情接口返回 `runtime_trace`，前端可看到：
-  - 来源 channel
-  - runtime provider
-  - runtime model
-  - hxa channel / message id
+  - 来源渠道，例如 Web / 微信 / Telegram / 飞书
+  - AI 层 provider，例如 zylos
+  - Runtime model，例如 hxa:zylos-main
   - 是否派发 worker-bot
   - 调用状态 / 错误
+
+2026-05-17 稳定层补强：
+
+- DB-backed conversation detail 会稳定返回 `runtime_trace`。
+- Conversation Monitor 里不再只显示技术字段，而是显示“来源 / AI 层 / 模型 / Worker / 状态”的产品化文案。
+- 默认 Web 历史接口已经覆盖微信渠道会话，真实微信消息会进入同一套产品历史。
 
 正式流程：
 
