@@ -116,6 +116,76 @@ describe('ConversationMonitorPane', () => {
     expect(wrapper.text()).toContain('world')
   })
 
+  it('shows runtime trace metadata for assistant replies', async () => {
+    mockConversationsApi.fetchConversationDetail.mockResolvedValue({
+      session_id: 'conv-1',
+      visible_count: 2,
+      thread_session_count: 1,
+      messages: [
+        { id: 1, session_id: 'conv-1', role: 'user', content: 'hello', timestamp: 11 },
+        {
+          id: 2,
+          session_id: 'conv-1',
+          role: 'assistant',
+          content: 'world',
+          timestamp: 12,
+          runtime_trace: {
+            channel: 'weixin',
+            runtime_provider: 'zylos',
+            runtime_model: 'hxa:zylos-main',
+            worker_dispatched: true,
+            worker_bot: 'worker-bot',
+            status: 'ok',
+          },
+        },
+      ],
+    })
+
+    const wrapper = mount(ConversationMonitorPane, {
+      props: { humanOnly: true },
+    })
+
+    await flushPromises()
+
+    const trace = wrapper.find('.conversation-monitor__runtime-trace')
+    expect(trace.exists()).toBe(true)
+    expect(trace.text()).toContain('channel: weixin')
+    expect(trace.text()).toContain('runtime: zylos')
+    expect(trace.text()).toContain('worker: worker-bot')
+  })
+
+  it('shows when a reply did not dispatch worker-bot', async () => {
+    mockConversationsApi.fetchConversationDetail.mockResolvedValue({
+      session_id: 'conv-1',
+      visible_count: 2,
+      thread_session_count: 1,
+      messages: [
+        { id: 1, session_id: 'conv-1', role: 'user', content: 'hello', timestamp: 11 },
+        {
+          id: 2,
+          session_id: 'conv-1',
+          role: 'assistant',
+          content: 'world',
+          timestamp: 12,
+          runtime_trace: {
+            channel: 'web',
+            runtime_provider: 'zylos',
+            worker_dispatched: false,
+            status: 'ok',
+          },
+        },
+      ],
+    })
+
+    const wrapper = mount(ConversationMonitorPane, {
+      props: { humanOnly: true },
+    })
+
+    await flushPromises()
+
+    expect(wrapper.find('.conversation-monitor__runtime-trace').text()).toContain('worker: 未派发')
+  })
+
   it('ignores stale detail responses when selection changes quickly', async () => {
     const first = deferred<any>()
     const second = deferred<any>()

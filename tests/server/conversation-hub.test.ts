@@ -165,4 +165,126 @@ describe('Conversation Hub', () => {
     expect(result.runtimeProvider).toBe('openai-direct')
     expect(result.replyText).toBe('direct reply')
   })
+
+  it('lets Web chat enter the unified product session and records reply trace metadata', async () => {
+    const sessions = new Map<string, any>()
+    const messages: any[] = []
+
+    const hub = createConversationHub({
+      getSession: (id) => sessions.get(id) || null,
+      createSession: (data) => {
+        sessions.set(data.id, data)
+        return data as any
+      },
+      addMessage: (message) => {
+        messages.push(message)
+        return messages.length
+      },
+      updateSessionStats: vi.fn(),
+      updateUsage: vi.fn(),
+      createRuntimeAdapter: () => ({
+        provider: 'zylos',
+        sendMessage: async () => ({
+          id: 'hxa_run_web_1',
+          provider: 'zylos',
+          model: 'hxa:zylos-main',
+          outputText: 'Web 统一回复',
+          channelId: 'channel-web-1',
+          messageId: 'message-web-1',
+          workerDispatched: true,
+          workerBot: 'worker-bot',
+        }),
+        getStatus: () => ({ provider: 'zylos', available: true, mode: 'active' }),
+      }),
+      countTokens: (text) => String(text).length,
+      nowSeconds: () => 1778933000,
+      logger: { warn: vi.fn() },
+    })
+
+    const result = await hub.receiveMessage({
+      channel: 'web',
+      externalUserId: 'web-user-1',
+      sessionId: 'web-session-1',
+      text: 'Web 问题',
+      profile: 'default',
+    })
+
+    expect(result.sessionId).toBe('web-session-1')
+    expect(sessions.get('web-session-1')).toMatchObject({
+      id: 'web-session-1',
+      title: 'Web web-user-1',
+      workspace: 'channel:web',
+    })
+    expect(messages[1]).toMatchObject({
+      session_id: 'web-session-1',
+      role: 'assistant',
+      content: 'Web 统一回复',
+    })
+    expect(JSON.parse(messages[1].reasoning_details)).toMatchObject({
+      channel: 'web',
+      runtime_provider: 'zylos',
+      runtime_model: 'hxa:zylos-main',
+      runtime_run_id: 'hxa_run_web_1',
+      hxa_channel_id: 'channel-web-1',
+      hxa_message_id: 'message-web-1',
+      worker_dispatched: true,
+      worker_bot: 'worker-bot',
+      status: 'ok',
+    })
+    expect(result.trace).toMatchObject({
+      channel: 'web',
+      runtimeProvider: 'zylos',
+      workerDispatched: true,
+      workerBot: 'worker-bot',
+      status: 'ok',
+    })
+  })
+
+  it('persists an actionable assistant failure when the runtime throws', async () => {
+    const messages: any[] = []
+    const warn = vi.fn()
+
+    const hub = createConversationHub({
+      getSession: () => null,
+      createSession: (data) => data as any,
+      addMessage: (message) => {
+        messages.push(message)
+        return messages.length
+      },
+      updateSessionStats: vi.fn(),
+      updateUsage: vi.fn(),
+      createRuntimeAdapter: () => ({
+        provider: 'openai-direct',
+        sendMessage: async () => {
+          throw new Error('bad gateway')
+        },
+        getStatus: () => ({ provider: 'openai-direct', available: true, mode: 'active' }),
+      }),
+      countTokens: (text) => String(text).length,
+      nowSeconds: () => 1778933000,
+      logger: { warn },
+    })
+
+    const result = await hub.receiveMessage({
+      channel: 'weixin',
+      externalUserId: 'wx-user-1',
+      text: '会失败的问题',
+      runtimeProvider: 'openai-direct',
+    })
+
+    expect(result.replyText).toBe('我收到消息了，但当前 AI 能力端暂时不可用，请稍后再试。')
+    expect(JSON.parse(messages[1].reasoning_details)).toMatchObject({
+      channel: 'weixin',
+      runtime_provider: 'openai-direct',
+      status: 'failed',
+      error: 'bad gateway',
+    })
+    expect(result.trace).toMatchObject({
+      channel: 'weixin',
+      runtimeProvider: 'openai-direct',
+      status: 'failed',
+      error: 'bad gateway',
+    })
+    expect(warn).toHaveBeenCalled()
+  })
 })

@@ -97,4 +97,57 @@ describe('Conversation Hub web history visibility', () => {
       { role: 'assistant', content: '微信回复' },
     ])
   })
+
+  it('keeps runtime trace visible in the Web conversation monitor detail', async () => {
+    const { initAllHermesTables } = await import('../../packages/server/src/db/hermes/schemas')
+    initAllHermesTables()
+
+    const { createConversationHub } = await import('../../packages/server/src/services/agentic/conversation-hub')
+    const hub = createConversationHub({
+      createRuntimeAdapter: () => ({
+        provider: 'zylos',
+        sendMessage: async () => ({
+          id: 'hxa_run_trace_1',
+          provider: 'zylos',
+          model: 'hxa:zylos-main',
+          outputText: '带来源的回复',
+          channelId: 'channel-trace-1',
+          messageId: 'message-trace-1',
+          workerDispatched: true,
+          workerBot: 'worker-bot',
+        }),
+        getStatus: () => ({ provider: 'zylos', available: true, mode: 'active' }),
+      }),
+      countTokens: (text) => String(text).length,
+      nowSeconds: () => 1778933000,
+      logger: { warn: vi.fn() },
+    })
+
+    const result = await hub.receiveMessage({
+      channel: 'web',
+      externalUserId: 'web-user-1',
+      sessionId: 'web-session-trace',
+      text: 'Web 来源追踪',
+      profile: 'default',
+    })
+
+    const sessionsController = await import('../../packages/server/src/controllers/hermes/sessions')
+    const detailCtx: any = { params: { id: result.sessionId }, query: {}, body: null }
+    await sessionsController.getConversationMessages(detailCtx)
+
+    expect(detailCtx.body.messages[1]).toMatchObject({
+      role: 'assistant',
+      content: '带来源的回复',
+      runtime_trace: expect.objectContaining({
+        channel: 'web',
+        runtime_provider: 'zylos',
+        runtime_model: 'hxa:zylos-main',
+        hxa_channel_id: 'channel-trace-1',
+        hxa_message_id: 'message-trace-1',
+        worker_dispatched: true,
+        worker_bot: 'worker-bot',
+        status: 'ok',
+      }),
+    })
+  })
 })
