@@ -92,6 +92,37 @@ Recommended options:
 docker buildx build --platform linux/amd64 -t agentic-yoyoo-saas:<tag> .
 ```
 
+## Standard Production Deploy
+
+Use the server-side deploy script instead of uploading a local Docker image tarball.
+
+```bash
+cd /home/ubuntu/agent-stack/agentic-build-current
+git pull
+chmod +x scripts/deploy-production.sh
+AGENTIC_DEPLOY_VERIFY_EMAIL="<owner-email>" \
+AGENTIC_DEPLOY_VERIFY_PASSWORD="<owner-password>" \
+scripts/deploy-production.sh
+```
+
+The script:
+
+1. Pulls the latest `main` branch from GitHub.
+2. Builds the image on the production server architecture.
+3. Starts a candidate container on `PORT + 1` with external channel pollers disabled.
+4. Verifies public health and, when credentials are provided, Runtime / HXA on the candidate.
+5. Stops the old production container only after the candidate passes.
+6. Starts the new production container, then verifies Runtime / Weixin / HXA / default Weixin history.
+7. Keeps the previous container for rollback.
+
+Rollback, if needed:
+
+```bash
+docker rm -f agentic
+docker rename <previous-container-name> agentic
+docker start agentic
+```
+
 ## Current Known Boundary
 
 - BeatyClaw is the product layer. It owns login, UI, channel status, conversation history, and the Runtime SDK boundary.

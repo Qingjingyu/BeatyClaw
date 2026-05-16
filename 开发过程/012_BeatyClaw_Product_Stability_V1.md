@@ -109,3 +109,20 @@ Tests       13 passed
 - 当前线上 `agentic` 容器实际监听 `PORT=3457`，不是 compose 默认的 `6060`。
 - 本地 Apple Silicon 构建出的镜像是 `linux/arm64`，不能直接在当前 `linux/amd64` 服务器运行。
 - 后续部署应优先采用服务器本地构建、镜像仓库，或 `docker buildx build --platform linux/amd64`，避免手工上传大镜像包。
+
+## 2026-05-17 部署流程正规化
+
+新增：
+
+- `scripts/deploy-production.sh`
+
+这个脚本把当前手工流程固定下来：
+
+1. 在服务器拉取 GitHub 最新 `main`。
+2. 在服务器本地构建 amd64 镜像。
+3. 用 `agentic-next-*` 临时容器先跑健康检查，候选容器会临时禁用微信 / Telegram 轮询，避免和正式容器重复消费外部消息。
+4. 验证通过后才停止旧 `agentic` 容器。
+5. 新容器启动失败时自动回滚。
+6. 旧容器保留为 `agentic-prev-*`，便于人工回滚。
+
+后续发布不应再从本地上传 2.8G 镜像包。
