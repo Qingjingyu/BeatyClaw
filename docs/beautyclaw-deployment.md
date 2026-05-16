@@ -48,12 +48,15 @@ Production should keep these paths stable across container recreates:
 
 ## Runtime Verification
 
-Run these checks after deploy. Replace the host and cookie/token handling with the current deployment method.
+Run these checks after deploy. Replace the host, port, and cookie/token handling with the current deployment method.
+
+Local compose defaults to port `6060`. The current `agent.aibosss.com` production container uses `PORT=3457` behind the public reverse proxy, so server-side checks should use the container's actual `PORT`.
 
 ```bash
-curl -fsS http://127.0.0.1:6060/api/hermes/runtime/status
-curl -fsS http://127.0.0.1:6060/api/hermes/weixin/status
-curl -fsS http://127.0.0.1:6060/api/agentic/hxa/overview
+PORT="${PORT:-6060}"
+curl -fsS "http://127.0.0.1:${PORT}/api/hermes/runtime/status"
+curl -fsS "http://127.0.0.1:${PORT}/api/hermes/weixin/status"
+curl -fsS "http://127.0.0.1:${PORT}/api/agentic/hxa/overview"
 ```
 
 Expected result:
@@ -68,7 +71,8 @@ Expected result:
 After sending a real Weixin message:
 
 ```bash
-curl -fsS 'http://127.0.0.1:6060/api/hermes/sessions/conversations?limit=20'
+PORT="${PORT:-6060}"
+curl -fsS "http://127.0.0.1:${PORT}/api/hermes/sessions/conversations?limit=20"
 ```
 
 Expected result:
@@ -76,6 +80,17 @@ Expected result:
 - A session with `workspace` like `channel:weixin` appears in the default list.
 - The detail endpoint returns user and assistant messages.
 - Assistant messages include `runtime_trace` with channel, provider, model, worker dispatch status, and status.
+
+## Image Build Notes
+
+Build the image for the server architecture. The current production server is `linux/amd64`; an image built on Apple Silicon without `--platform linux/amd64` will fail on the server with `exec format error`.
+
+Recommended options:
+
+```bash
+# Build on the production server, or:
+docker buildx build --platform linux/amd64 -t agentic-yoyoo-saas:<tag> .
+```
 
 ## Current Known Boundary
 

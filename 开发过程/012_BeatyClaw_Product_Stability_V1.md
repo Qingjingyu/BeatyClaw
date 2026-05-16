@@ -101,3 +101,11 @@ Tests       13 passed
 - Telegram 需要真实 Bot Token 才能做完整生产验收。
 - 飞书目前仍是配置入口，完整 runtime 后续接。
 - 本阶段没有引入多租户，也没有改变用户登录模型。
+
+## 部署注意
+
+2026-05-17 验证时发现：
+
+- 当前线上 `agentic` 容器实际监听 `PORT=3457`，不是 compose 默认的 `6060`。
+- 本地 Apple Silicon 构建出的镜像是 `linux/arm64`，不能直接在当前 `linux/amd64` 服务器运行。
+- 后续部署应优先采用服务器本地构建、镜像仓库，或 `docker buildx build --platform linux/amd64`，避免手工上传大镜像包。
