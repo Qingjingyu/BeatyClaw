@@ -29,6 +29,18 @@ function linkedSessionsLabel(count: number): string {
   return t('chat.linkedSessions', { count })
 }
 
+function runtimeTraceLabel(trace: ConversationDetail['messages'][number]['runtime_trace']): string {
+  if (!trace) return ''
+  const parts = [
+    trace.channel ? `channel: ${trace.channel}` : '',
+    trace.runtime_provider ? `runtime: ${trace.runtime_provider}` : '',
+    trace.runtime_model ? `model: ${trace.runtime_model}` : '',
+    trace.worker_dispatched ? `worker: ${trace.worker_bot || 'worker-bot'}` : 'worker: 未派发',
+    trace.status ? `status: ${trace.status}` : '',
+  ].filter(Boolean)
+  return parts.join(' · ')
+}
+
 function invalidateRequests() {
   sessionsRequestId += 1
   detailRequestId += 1
@@ -170,6 +182,9 @@ onUnmounted(() => {
           :class="`role-${message.role}`"
         >
           <div class="conversation-monitor__message-meta">{{ roleLabel(message.role) }} · {{ formatTimestampSeconds(message.timestamp) }}</div>
+          <div v-if="runtimeTraceLabel(message.runtime_trace)" class="conversation-monitor__runtime-trace">
+            {{ runtimeTraceLabel(message.runtime_trace) }}
+          </div>
           <div class="conversation-monitor__message-content">{{ message.content }}</div>
         </article>
       </div>
@@ -258,6 +273,20 @@ onUnmounted(() => {
 .conversation-monitor__message-content {
   margin-top: 6px;
   white-space: pre-wrap;
+}
+
+.conversation-monitor__runtime-trace {
+  width: fit-content;
+  max-width: 100%;
+  margin-top: 8px;
+  padding: 3px 7px;
+  border: 1px solid rgba($border-color, 0.8);
+  border-radius: 6px;
+  color: $text-secondary;
+  background: rgba($bg-secondary, 0.75);
+  font-size: 11px;
+  line-height: 1.4;
+  word-break: break-word;
 }
 
 .conversation-monitor__detail {

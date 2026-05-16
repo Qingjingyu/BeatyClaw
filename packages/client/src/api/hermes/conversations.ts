@@ -30,6 +30,18 @@ export interface ConversationMessage {
   role: 'user' | 'assistant'
   content: string
   timestamp: number
+  runtime_trace?: {
+    channel?: string
+    runtime_provider?: string
+    runtime_model?: string
+    runtime_run_id?: string
+    hxa_channel_id?: string
+    hxa_message_id?: string
+    worker_dispatched?: boolean
+    worker_bot?: string
+    status?: string
+    error?: string
+  } | null
 }
 
 export interface ConversationDetail {
