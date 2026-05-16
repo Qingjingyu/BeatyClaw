@@ -112,10 +112,10 @@ interface BeatyClawRuntime {
 
 ### Phase 1：聊天入口接 SDK
 
-把 `ChatRunSocket` 中直接调用 `createHxaMainAgentRun()` 的地方，改为调用：
+把 `ChatRunSocket` 中直接调用 `createHxaMainAgentRun()` 的地方，改为调用 Runtime SDK：
 
 ```ts
-createRuntimeAdapter('zylos').sendMessage(...)
+createConfiguredRuntimeAdapter().sendMessage(...)
 ```
 
 验收：
@@ -127,7 +127,7 @@ createRuntimeAdapter('zylos').sendMessage(...)
 本轮已完成：
 
 - `ChatRunSocket` 不再直接 import / 调用 `createHxaMainAgentRun()`。
-- Web 对话入口改为调用 `createRuntimeAdapter('zylos').sendMessage(...)`。
+- Web 对话入口改为调用 `createConfiguredRuntimeAdapter().sendMessage(...)`，实际 provider 由部署环境决定。
 - `ZylosRuntimeAdapter.sendMessage()` 在 hxa/zylos 未配置时返回 `null`，保留原有 GPT-5.5 直连 fallback。
 - 产品层开始面向 Runtime SDK，而不是直接依赖 hxa/zylos 细节。
 
@@ -207,7 +207,7 @@ title = {ChannelLabel} {externalUserId}
 ### 当前边界
 
 - 只迁移微信。
-- Telegram / 飞书后续按同样模式迁移。
+- Telegram 已按同样模式迁移到 Conversation Hub；飞书后续按同样模式迁移。
 - 不做联系人系统。
 - 不改历史页 UI。
 - 不做多租户 runtime 选择。
@@ -288,3 +288,67 @@ npm run build
 - Web 会话列表仍为空
 
 当前判断：Conversation Hub 链路代码已就绪，但真实微信闭环还缺新的 iLink 入站事件作为验收样本。下一步需要在微信端重新发送新消息，再通过诊断字段确认消息是否被 iLink 返回、是否被处理、是否写入 Web 历史。
+
+## 2026-05-16 Deployment Runtime Provider
+
+### 背景
+
+苏白明确产品边界：BeatyClaw 不是让终端用户在页面里切换底层 AI，而是作为独立产品层，可以部署到不同 AI Runtime 底座上。
+
+目标结构：
+
+```text
+用户 / 渠道
+↓
+BeatyClaw 产品层
+↓
+Conversation Hub / Runtime SDK
+↓
+部署级 Runtime provider
+  - zylos
+  - openai-direct
+  - hms（预留）
+  - openclaw（预留）
+```
+
+### 决策
+
+第一版用环境变量控制底层 Runtime：
+
+```env
+BEATYCLAW_RUNTIME_PROVIDER=zylos
+```
+
+默认继续使用 `zylos`，不破坏已跑通的微信和 Web 链路。
+
+新增 `openai-direct` provider，用 OpenAI-compatible `/v1/chat/completions` 证明 BeatyClaw 可以脱离 Zylos 单独运行：
+
+```env
+BEATYCLAW_RUNTIME_PROVIDER=openai-direct
+OPENAI_BASE_URL=https://api.openai.com
+OPENAI_API_KEY=...
+AGENTIC_DEFAULT_MODEL=gpt-5.5
+```
+
+### 实现
+
+- Runtime SDK 增加：
+  - `getConfiguredRuntimeProvider()`
+  - `createConfiguredRuntimeAdapter()`
+  - `getConfiguredRuntimeStatus()`
+  - `createOpenAiDirectRuntimeAdapter()`
+- Web 对话入口改为调用部署级 provider。
+- 微信 Conversation Hub 默认读取部署级 provider，不再写死 `zylos`。
+- Telegram runtime 入站消息也进入 Conversation Hub，不再直接调用 hxa/zylos-main。
+- 新增状态接口：
+
+```text
+GET /api/hermes/runtime/status
+```
+
+### 当前边界
+
+- 这不是用户可见的 Runtime 切换器。
+- 不做多租户 Runtime 隔离。
+- HMS / OpenClaw 仍是预留 provider，后续单独实现。
+- `openai-direct` 只提供基础聊天能力，不等价于 Zylos/HXA 多 Agent。

@@ -18,21 +18,17 @@ BeatyClaw 数字员工是基于 `Yoyoo0.1 / hermes-web-ui` 改造出来的单用
 ## 当前架构
 
 ```text
-外部入口：微信 / Telegram / 飞书
+外部入口：Web / 微信 / Telegram / 飞书
         ↓
-BeatyClaw 数字员工 Web 工作台
+BeatyClaw 数字员工产品层
         ↓
-Agentic runtime adapter
+Conversation Hub / Runtime SDK
         ↓
-hxa-connect
+部署级 Runtime provider
+        ├─ zylos：hxa-connect → zylos-main → worker-bot / GPT-5.5
+        └─ openai-direct：OpenAI-compatible API
         ↓
-zylos-main
-        ↓
-worker-bot / hxa 多 Agent
-        ↓
-GPT-5.5
-        ↓
-返回到工作台或外部渠道
+返回到工作台或外部渠道，并写入产品会话历史
 ```
 
 当前线上容器：
@@ -46,7 +42,7 @@ GPT-5.5
 
 - Frontend：Vue 3 + TypeScript + Vite + Naive UI。
 - Backend：Node.js + Koa + TypeScript。
-- Runtime：Agentic adapter + hxa-connect + zylos-main + worker-bot。
+- Runtime：BeatyClaw Runtime SDK + 部署级 Runtime provider。默认 `zylos`，可通过 `BEATYCLAW_RUNTIME_PROVIDER=openai-direct` 接 OpenAI-compatible API。
 - Storage：当前沿用本地 SQLite / Hermes profile 文件体系。
 - Build：`npm run build` 输出到 `dist/`。
 - Deploy：Docker 镜像 `agentic-yoyoo-saas:latest`。
@@ -122,7 +118,7 @@ BeatyClaw 数字员工
 - 工作台对话页可用。
 - 历史会话可查看。
 - 会话搜索可用。
-- 对话接口正在向 `zylos-main -> worker-bot -> GPT-5.5` 的正式链路收口。
+- 对话接口已通过 Runtime SDK 调用部署级 Runtime provider。默认仍是 `zylos-main -> worker-bot -> GPT-5.5`，也可部署为 `openai-direct` 直连 OpenAI-compatible API。
 
 ### 5. 任务 / 看板
 
@@ -168,8 +164,8 @@ BeatyClaw / Agentic
 - 微信扫码绑定。
 - 微信账号配置保存。
 - Agentic 微信 runtime 长轮询。
-- 微信消息进入 `hxa/zylos-main`。
-- worker-bot / GPT-5.5 生成回复。
+- 微信消息进入 BeatyClaw Conversation Hub。
+- Conversation Hub 写入产品会话，再通过 Runtime SDK 调用部署级 Runtime provider。
 - Agentic 把回复发回微信。
 - 用户已经在微信里看到回复。
 
@@ -178,8 +174,9 @@ BeatyClaw / Agentic
 ```text
 微信
 → Agentic weixin-runtime
-→ hxa-connect / zylos-main
-→ worker-bot / GPT-5.5
+→ BeatyClaw Conversation Hub
+→ Runtime SDK
+→ 部署级 Runtime provider
 → Agentic weixin-runtime
 → 微信回复
 ```
@@ -190,6 +187,31 @@ BeatyClaw / Agentic
 - `packages/server/src/controllers/hermes/weixin.ts`
 - `packages/server/src/routes/hermes/weixin.ts`
 - `packages/client/src/views/hermes/ChannelsView.vue`
+
+## Runtime Provider 部署配置
+
+BeatyClaw 的定位是产品层，不把 AI 能力层写死在产品代码里。底部 AI Runtime 由部署配置决定，终端用户不在页面里切换 Runtime。
+
+当前支持：
+
+```env
+BEATYCLAW_RUNTIME_PROVIDER=zylos
+# 默认：复用当前 hxa-connect / zylos-main / worker-bot 链路
+
+BEATYCLAW_RUNTIME_PROVIDER=openai-direct
+# 直连 OpenAI-compatible API，用于证明 BeatyClaw 可以脱离 Zylos 独立运行
+OPENAI_BASE_URL=https://api.openai.com
+OPENAI_API_KEY=...
+AGENTIC_DEFAULT_MODEL=gpt-5.5
+```
+
+状态接口：
+
+```text
+GET /api/hermes/runtime/status
+```
+
+该接口用于部署后确认当前接入的是 `zylos`、`openai-direct`，还是后续实现的 `hms` / `openclaw`。
 
 ### Telegram：代码完成，等待真实 Bot Token
 
@@ -202,7 +224,7 @@ BeatyClaw / Agentic
 - 保存 Token 后 runtime 热启动，不需要重启容器。
 - Telegram Bot API `getUpdates` 长轮询代码已接入。
 - Telegram Bot API `sendMessage` 回复代码已接入。
-- 入站消息会先进入 BeatyClaw Conversation Hub，写入产品会话，再通过 Runtime SDK 调用当前 Zylos/HXA 能力端。
+- 入站消息会先进入 BeatyClaw Conversation Hub，写入产品会话，再通过 Runtime SDK 调用部署级 Runtime provider。
 - `/api/hermes/telegram/status` 已上线。
 - 频道页 Telegram 卡片接入 runtime 状态。
 - 假 Token 负向验证通过：保存后 runtime 启动，并正确显示 Telegram `401 Unauthorized`，清空后无残留。
@@ -210,7 +232,7 @@ BeatyClaw / Agentic
 未完成：
 
 - 缺真实 Telegram Bot Token。
-- 还没有真实 Telegram 消息进入 hxa/zylos-main 的证据。
+- 还没有真实 Telegram 消息进入 Conversation Hub / Runtime SDK 的证据。
 - 还没有真实 Telegram 回复发回客户端的证据。
 - 频道页还不能显示 Telegram `已连接，runtime 运行中`。
 
@@ -402,7 +424,7 @@ tests/server/telegram-runtime.test.ts                  Telegram runtime 测试
 拿到 Token 后立即验收：
 
 ```text
-Telegram -> Agentic -> hxa/zylos-main -> worker-bot/GPT-5.5 -> Telegram 回复
+Telegram -> BeatyClaw Conversation Hub -> Runtime SDK -> 部署级 Runtime provider -> Telegram 回复
 ```
 
 ### P1：飞书 runtime
