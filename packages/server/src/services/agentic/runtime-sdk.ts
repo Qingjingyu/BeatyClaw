@@ -18,6 +18,8 @@ export interface RuntimeMessageResult {
   outputText: string
   channelId?: string
   messageId?: string
+  workerDispatched?: boolean
+  workerBot?: string
 }
 
 export interface RuntimeStatus {

@@ -31,7 +31,8 @@ import {
   getAgenticRuntimeTarget,
   mapOpenAIChatCompletionChunk,
 } from '../agentic/runtime'
-import { createConfiguredRuntimeAdapter } from '../agentic/runtime-sdk'
+import { getConfiguredRuntimeProvider } from '../agentic/runtime-sdk'
+import { receiveConversationMessage } from '../agentic/conversation-hub'
 import { getYoyooSessionCookieName, getYoyooUserBySession } from '../yoyoo-auth'
 
 /**
@@ -174,6 +175,10 @@ interface QueuedRun {
   profile: string
 }
 
+interface AuthenticatedSocket extends Socket {
+  yoyooUser?: Awaited<ReturnType<typeof getYoyooUserBySession>>
+}
+
 interface SessionState {
   messages: SessionMessage[]
   isWorking: boolean
@@ -193,6 +198,7 @@ interface ResponseRunState {
   responseId?: string
   insertedKeys: Set<string>
   toolCalls: Map<string, any>
+  persistedByConversationHub?: boolean
 }
 
 // --- ChatRunSocket ---
@@ -216,14 +222,16 @@ export class ChatRunSocket {
 
   // --- Auth middleware ---
 
-  private async authMiddleware(socket: Socket, next: (err?: Error) => void) {
+  private async authMiddleware(socket: AuthenticatedSocket, next: (err?: Error) => void) {
     const cookieHeader = socket.handshake.headers.cookie || ''
     const cookieMap = new Map(cookieHeader.split(';').map(part => {
       const [key, ...rest] = part.trim().split('=')
       return [key, decodeURIComponent(rest.join('='))]
     }))
     const yoyooSession = cookieMap.get(getYoyooSessionCookieName())
-    if (await getYoyooUserBySession(yoyooSession)) {
+    const yoyooUser = await getYoyooUserBySession(yoyooSession)
+    if (yoyooUser) {
+      socket.yoyooUser = yoyooUser
       return next()
     }
 
@@ -240,7 +248,7 @@ export class ChatRunSocket {
 
   // --- Connection handler ---
 
-  private onConnection(socket: Socket) {
+  private onConnection(socket: AuthenticatedSocket) {
     const profile = (socket.handshake.query?.profile as string) || 'default'
 
     socket.on('run', async (data: {
@@ -503,15 +511,23 @@ export class ChatRunSocket {
   // --- Run handler ---
 
   private async handleRun(
-    socket: Socket,
+    socket: AuthenticatedSocket,
     data: { input: string | ContentBlock[]; session_id?: string; model?: string; instructions?: string },
     profile: string,
     skipUserMessage = false,
   ) {
     const { input, session_id, model, instructions } = data
     const agenticRuntime = getAgenticRuntimeTarget(model)
-    const upstream = agenticRuntime?.upstream || this.gatewayManager.getUpstream(profile).replace(/\/$/, '')
-    const apiKey = agenticRuntime?.apiKey || this.gatewayManager.getApiKey(profile) || undefined
+    const configuredRuntimeProvider = getConfiguredRuntimeProvider()
+    const useConversationHubForWeb = Boolean(
+      session_id && (configuredRuntimeProvider === 'zylos' || configuredRuntimeProvider === 'openai-direct'),
+    )
+    const upstream = useConversationHubForWeb
+      ? ''
+      : (agenticRuntime?.upstream || this.gatewayManager.getUpstream(profile).replace(/\/$/, ''))
+    const apiKey = useConversationHubForWeb
+      ? undefined
+      : (agenticRuntime?.apiKey || this.gatewayManager.getApiKey(profile) || undefined)
 
     // Local marker used only to group in-memory messages for this streamed response.
     const runMarker = session_id
@@ -547,16 +563,24 @@ export class ChatRunSocket {
         if (!getSession(session_id)) {
           const previewText = extractTextForPreview(input)
           const preview = previewText.replace(/[\r\n]/g, ' ').substring(0, 100)
-          createSession({ id: session_id, profile, model, title: preview })
+          createSession({
+            id: session_id,
+            profile,
+            model: useConversationHubForWeb ? (model || `runtime:${configuredRuntimeProvider}`) : model,
+            title: preview,
+            workspace: useConversationHubForWeb ? 'channel:web' : undefined,
+          })
         }
 
         // Write user message to local DB immediately
-        addMessage({
-          session_id,
-          role: 'user',
-          content: inputStr,
-          timestamp: now,
-        })
+        if (!useConversationHubForWeb) {
+          addMessage({
+            session_id,
+            role: 'user',
+            content: inputStr,
+            timestamp: now,
+          })
+        }
       } else {
         // Dequeued: write the user message into both memory and DB so the
         // backend transcript keeps the same run boundary as the client.
@@ -572,14 +596,22 @@ export class ChatRunSocket {
         if (!getSession(session_id)) {
           const previewText = extractTextForPreview(input)
           const preview = previewText.replace(/[\r\n]/g, ' ').substring(0, 100)
-          createSession({ id: session_id, profile, model, title: preview })
+          createSession({
+            id: session_id,
+            profile,
+            model: useConversationHubForWeb ? (model || `runtime:${configuredRuntimeProvider}`) : model,
+            title: preview,
+            workspace: useConversationHubForWeb ? 'channel:web' : undefined,
+          })
         }
-        addMessage({
-          session_id,
-          role: 'user',
-          content: inputStr,
-          timestamp: now,
-        })
+        if (!useConversationHubForWeb) {
+          addMessage({
+            session_id,
+            role: 'user',
+            content: inputStr,
+            timestamp: now,
+          })
+        }
       }
 
       socket.join(`session:${session_id}`)
@@ -928,48 +960,46 @@ export class ChatRunSocket {
       body.stream = true
       body.store = false
 
-      const runtimeAdapter = createConfiguredRuntimeAdapter()
-      const runtimeStatus = runtimeAdapter.getStatus()
-      let hxaRun = null
-      if (runtimeStatus.available || runtimeAdapter.provider === 'zylos') {
-        hxaRun = await runtimeAdapter.sendMessage({
-          sessionId: session_id,
+      if (useConversationHubForWeb) {
+        const webResult = await receiveConversationMessage({
           channel: 'web',
-          text: input,
-          metadata: { profile, model, runtimeProvider: runtimeAdapter.provider },
+          externalUserId: socket.yoyooUser?.id || socket.id,
+          sessionId: session_id,
+          text: contentBlocksToString(input),
+          profile,
+          model,
+          metadata: { profile, model, socket_id: socket.id },
         })
-      } else {
-        const queueLen = session_id ? this.sessionMap.get(session_id)?.queue?.length ?? 0 : 0
-        if (session_id) await this.markCompleted(socket, session_id, { event: 'run.failed' })
-        emit('run.failed', {
-          event: 'run.failed',
-          error: `Runtime ${runtimeAdapter.provider} is ${runtimeStatus.mode}`,
-          queue_remaining: queueLen,
-        })
-        if (session_id && queueLen > 0) this.dequeueNextQueuedRun(socket, session_id)
-        return
-      }
-      if (hxaRun) {
         const state = session_id ? this.sessionMap.get(session_id) : undefined
         if (state && runMarker) {
+          const responseRun = this.getResponseRunState(state, runMarker)
+          responseRun.persistedByConversationHub = true
           const started = this.applyResponseStreamEvent(state, session_id!, runMarker, 'response.created', {
             response: {
-              id: hxaRun.id,
+              id: webResult.runtimeResult?.id || `conversation_hub_${Date.now()}`,
               status: 'in_progress',
-              model: hxaRun.model,
+              model: webResult.runtimeResult?.model || `runtime:${webResult.runtimeProvider}`,
             },
           })
           if (started) emit(started.event, started.payload)
 
           const delta = this.applyResponseStreamEvent(state, session_id!, runMarker, 'response.output_text.delta', {
-            response: { id: hxaRun.id, status: 'in_progress', model: hxaRun.model },
-            delta: hxaRun.outputText,
-            model: hxaRun.model,
+            response: {
+              id: webResult.runtimeResult?.id,
+              status: 'in_progress',
+              model: webResult.runtimeResult?.model || `runtime:${webResult.runtimeProvider}`,
+            },
+            delta: webResult.replyText,
+            model: webResult.runtimeResult?.model || `runtime:${webResult.runtimeProvider}`,
           })
           if (delta) emit(delta.event, delta.payload)
 
           this.applyResponseStreamEvent(state, session_id!, runMarker, 'response.output_text.done', {
-            response: { id: hxaRun.id, status: 'completed', model: hxaRun.model },
+            response: {
+              id: webResult.runtimeResult?.id,
+              status: 'completed',
+              model: webResult.runtimeResult?.model || `runtime:${webResult.runtimeProvider}`,
+            },
           })
         }
 
@@ -977,23 +1007,28 @@ export class ChatRunSocket {
         if (session_id) {
           await this.markCompleted(socket, session_id, {
             event: 'run.completed',
-            run_id: hxaRun.id,
-          })
-          updateUsage(session_id, {
-            inputTokens: countTokens(contentBlocksToString(input)),
-            outputTokens: countTokens(hxaRun.outputText),
-            model: hxaRun.model,
-            profile: this.sessionMap.get(session_id)?.profile,
+            run_id: webResult.runtimeResult?.id,
           })
         }
         emit('run.completed', {
           event: 'run.completed',
-          run_id: hxaRun.id,
-          response_id: hxaRun.id,
-          output: hxaRun.outputText,
+          run_id: webResult.runtimeResult?.id,
+          response_id: webResult.runtimeResult?.id,
+          output: webResult.replyText,
+          source: {
+            channel: webResult.trace.channel,
+            runtime_provider: webResult.trace.runtimeProvider,
+            runtime_model: webResult.trace.runtimeModel,
+            hxa_channel_id: webResult.trace.hxaChannelId,
+            hxa_message_id: webResult.trace.hxaMessageId,
+            worker_dispatched: webResult.trace.workerDispatched,
+            worker_bot: webResult.trace.workerBot,
+            status: webResult.trace.status,
+            error: webResult.trace.error,
+          },
           usage: {
             input_tokens: countTokens(contentBlocksToString(input)),
-            output_tokens: countTokens(hxaRun.outputText),
+            output_tokens: countTokens(webResult.replyText),
           },
           queue_remaining: queueLen,
         })
@@ -1344,6 +1379,7 @@ export class ChatRunSocket {
   private flushResponseRunToDb(state: SessionState, sessionId: string) {
     const run = state.responseRun
     if (!run?.runMarker) return
+    if (run.persistedByConversationHub) return
     let flushed = 0
     for (const msg of state.messages) {
       if (msg.runMarker !== run.runMarker) continue

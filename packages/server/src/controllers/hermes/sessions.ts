@@ -34,6 +34,16 @@ function filterPendingDeletedConversationSummaries(items: ConversationSummary[])
   return filterPendingDeletedSessions(items)
 }
 
+function parseRuntimeTrace(value: string | null | undefined): Record<string, unknown> | null {
+  if (!value) return null
+  try {
+    const parsed = JSON.parse(value)
+    return parsed && typeof parsed === 'object' ? parsed as Record<string, unknown> : null
+  } catch {
+    return null
+  }
+}
+
 export async function listConversations(ctx: any) {
   const source = (ctx.query.source as string) || undefined
   const humanOnly = (ctx.query.humanOnly as string) !== 'false' && ctx.query.humanOnly !== '0'
@@ -105,6 +115,7 @@ export async function getConversationMessages(ctx: any) {
         role: m.role as 'user' | 'assistant',
         content: m.content,
         timestamp: m.timestamp,
+        runtime_trace: parseRuntimeTrace(m.reasoning_details),
       }))
     ctx.body = {
       session_id: ctx.params.id,

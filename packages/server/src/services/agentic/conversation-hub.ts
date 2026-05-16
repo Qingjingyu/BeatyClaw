@@ -20,6 +20,7 @@ export interface ConversationHubMessageInput {
   channel: 'web' | 'weixin' | 'telegram' | 'feishu'
   externalUserId: string
   text: string
+  sessionId?: string
   profile?: string
   model?: string
   runtimeProvider?: BeatyClawRuntimeProvider
@@ -31,6 +32,20 @@ export interface ConversationHubMessageResult {
   replyText: string
   runtimeProvider: BeatyClawRuntimeProvider
   runtimeResult: RuntimeMessageResult | null
+  trace: ConversationHubTrace
+}
+
+export interface ConversationHubTrace {
+  channel: ConversationHubMessageInput['channel']
+  runtimeProvider: BeatyClawRuntimeProvider
+  runtimeModel?: string
+  runtimeRunId?: string
+  hxaChannelId?: string
+  hxaMessageId?: string
+  workerDispatched: boolean
+  workerBot?: string
+  status: 'ok' | 'failed' | 'empty'
+  error?: string
 }
 
 interface ConversationHubDeps {
@@ -88,6 +103,25 @@ function buildRuntimeText(input: ConversationHubMessageInput): string {
   ].join('\n')
 }
 
+function toTraceDetails(trace: ConversationHubTrace): string {
+  return JSON.stringify({
+    channel: trace.channel,
+    runtime_provider: trace.runtimeProvider,
+    runtime_model: trace.runtimeModel,
+    runtime_run_id: trace.runtimeRunId,
+    hxa_channel_id: trace.hxaChannelId,
+    hxa_message_id: trace.hxaMessageId,
+    worker_dispatched: trace.workerDispatched,
+    worker_bot: trace.workerBot,
+    status: trace.status,
+    error: trace.error,
+  })
+}
+
+function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err)
+}
+
 export function createConversationHub(deps: Partial<ConversationHubDeps> = {}) {
   const d: ConversationHubDeps = { ...defaultDeps, ...deps }
 
@@ -95,7 +129,7 @@ export function createConversationHub(deps: Partial<ConversationHubDeps> = {}) {
     async receiveMessage(input: ConversationHubMessageInput): Promise<ConversationHubMessageResult> {
       const profile = input.profile || 'default'
       const runtimeProvider = input.runtimeProvider || d.getConfiguredRuntimeProvider()
-      const sessionId = stableSessionId(input.channel, input.externalUserId)
+      const sessionId = input.sessionId || stableSessionId(input.channel, input.externalUserId)
       const now = d.nowSeconds()
 
       if (!d.getSession(sessionId)) {
@@ -117,6 +151,12 @@ export function createConversationHub(deps: Partial<ConversationHubDeps> = {}) {
 
       let runtimeResult: RuntimeMessageResult | null = null
       let replyText = DEFAULT_REPLY
+      let trace: ConversationHubTrace = {
+        channel: input.channel,
+        runtimeProvider,
+        workerDispatched: false,
+        status: 'empty',
+      }
 
       try {
         const runtime: BeatyClawRuntime = d.createRuntimeAdapter(runtimeProvider)
@@ -128,9 +168,27 @@ export function createConversationHub(deps: Partial<ConversationHubDeps> = {}) {
           metadata: input.metadata,
         })
         replyText = runtimeResult?.outputText?.trim() || DEFAULT_REPLY
+        trace = {
+          channel: input.channel,
+          runtimeProvider,
+          runtimeModel: runtimeResult?.model,
+          runtimeRunId: runtimeResult?.id,
+          hxaChannelId: runtimeResult?.channelId,
+          hxaMessageId: runtimeResult?.messageId,
+          workerDispatched: Boolean(runtimeResult?.workerDispatched),
+          workerBot: runtimeResult?.workerBot,
+          status: runtimeResult?.outputText?.trim() ? 'ok' : 'empty',
+        }
       } catch (err) {
         d.logger.warn({ err, channel: input.channel, sessionId }, '[conversation-hub] runtime message failed')
         replyText = RUNTIME_ERROR_REPLY
+        trace = {
+          channel: input.channel,
+          runtimeProvider,
+          workerDispatched: false,
+          status: 'failed',
+          error: errorMessage(err),
+        }
       }
 
       d.addMessage({
@@ -138,6 +196,7 @@ export function createConversationHub(deps: Partial<ConversationHubDeps> = {}) {
         role: 'assistant',
         content: replyText,
         timestamp: d.nowSeconds(),
+        reasoning_details: toTraceDetails(trace),
       })
       d.updateSessionStats(sessionId)
       d.updateUsage(sessionId, {
@@ -152,6 +211,7 @@ export function createConversationHub(deps: Partial<ConversationHubDeps> = {}) {
         replyText,
         runtimeProvider,
         runtimeResult,
+        trace,
       }
     },
   }
