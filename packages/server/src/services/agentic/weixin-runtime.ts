@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
 import { dirname, join } from 'path'
-import { createHxaMainAgentRun } from './runtime'
+import { receiveConversationMessage } from './conversation-hub'
 import { logger } from '../logger'
 import { getActiveEnvPath, getActiveProfileDir } from '../hermes/hermes-profile'
 
@@ -370,8 +370,20 @@ class WeixinRuntime {
     this.messagesReceived += 1
     this.lastMessageAt = new Date().toISOString()
 
-    const run = await createHxaMainAgentRun(buildHxaInputFromWeixin(message, text))
-    const reply = run?.outputText?.trim() || '我收到消息了，但当前没有生成有效回复。'
+    const result = await receiveConversationMessage({
+      channel: 'weixin',
+      externalUserId: message.from_user_id!,
+      text,
+      profile: process.env.PROFILE || 'default',
+      runtimeProvider: 'zylos',
+      metadata: {
+        account_id: config.accountId,
+        context_token: message.context_token,
+        message_id: message.message_id,
+        client_id: message.client_id,
+      },
+    })
+    const reply = result.replyText.trim() || '我收到消息了，但当前没有生成有效回复。'
     this.messagesForwarded += 1
 
     await client.sendText(message.from_user_id!, message.context_token!, reply)
