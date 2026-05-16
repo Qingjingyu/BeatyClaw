@@ -430,7 +430,6 @@ class WeixinRuntime {
       externalUserId: message.from_user_id!,
       text,
       profile: process.env.PROFILE || 'default',
-      runtimeProvider: 'zylos',
       metadata: {
         account_id: config.accountId,
         context_token: message.context_token,

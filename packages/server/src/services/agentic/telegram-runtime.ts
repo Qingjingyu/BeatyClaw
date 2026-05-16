@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
 import { dirname, join } from 'path'
-import { createHxaMainAgentRun } from './runtime'
+import { receiveConversationMessage } from './conversation-hub'
 import { getActiveEnvPath, getActiveProfileDir } from '../hermes/hermes-profile'
 import { logger } from '../logger'
 
@@ -368,8 +368,21 @@ class TelegramRuntime {
     this.messagesReceived += 1
     this.lastMessageAt = new Date().toISOString()
 
-    const run = await createHxaMainAgentRun(buildHxaInputFromTelegram(update, text))
-    const reply = run?.outputText?.trim() || '我收到消息了，但当前没有生成有效回复。'
+    const result = await receiveConversationMessage({
+      channel: 'telegram',
+      externalUserId: String(message.from?.id || message.chat?.id || 'unknown'),
+      text,
+      profile: process.env.PROFILE || 'default',
+      metadata: {
+        chat_id: message.chat?.id,
+        chat_type: message.chat?.type,
+        message_id: message.message_id,
+        message_thread_id: message.message_thread_id,
+        from_username: message.from?.username,
+        from_first_name: message.from?.first_name,
+      },
+    })
+    const reply = result.replyText || '我收到消息了，但当前没有生成有效回复。'
     this.messagesForwarded += 1
 
     await client.sendText(message, reply)

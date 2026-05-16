@@ -1,8 +1,14 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createConversationHub } from '../../packages/server/src/services/agentic/conversation-hub'
-import type { BeatyClawRuntime } from '../../packages/server/src/services/agentic/runtime-sdk'
+import type { BeatyClawRuntime, BeatyClawRuntimeProvider } from '../../packages/server/src/services/agentic/runtime-sdk'
 
 describe('Conversation Hub', () => {
+  const originalEnv = process.env
+
+  afterEach(() => {
+    process.env = originalEnv
+  })
+
   it('stores channel user and assistant messages in a stable product session before returning channel reply', async () => {
     const sessions = new Map<string, any>()
     const messages: any[] = []
@@ -123,5 +129,40 @@ describe('Conversation Hub', () => {
       '第二句',
       '我收到消息了，但当前没有生成有效回复。',
     ])
+  })
+
+  it('uses the deployment configured runtime provider when the channel does not override it', async () => {
+    process.env = { ...originalEnv, BEATYCLAW_RUNTIME_PROVIDER: 'openai-direct' }
+    const requestedProviders: BeatyClawRuntimeProvider[] = []
+
+    const hub = createConversationHub({
+      getSession: () => null,
+      createSession: (data) => data as any,
+      addMessage: vi.fn(),
+      updateSessionStats: vi.fn(),
+      updateUsage: vi.fn(),
+      createRuntimeAdapter: (provider) => {
+        requestedProviders.push(provider)
+        return {
+          provider,
+          sendMessage: async () => ({
+            id: 'openai_direct_1',
+            provider,
+            model: 'openai-direct:gpt-5.5',
+            outputText: 'direct reply',
+          }),
+          getStatus: () => ({ provider, available: true, mode: 'active' }),
+        }
+      },
+      countTokens: () => 1,
+      nowSeconds: () => 1778933000,
+      logger: { warn: vi.fn() },
+    })
+
+    const result = await hub.receiveMessage({ channel: 'weixin', externalUserId: 'wx-user-1', text: '你好' })
+
+    expect(requestedProviders).toEqual(['openai-direct'])
+    expect(result.runtimeProvider).toBe('openai-direct')
+    expect(result.replyText).toBe('direct reply')
   })
 })

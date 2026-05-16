@@ -9,6 +9,7 @@ import { updateUsage } from '../../db/hermes/usage-store'
 import { countTokens } from '../../lib/context-compressor'
 import {
   createRuntimeAdapter,
+  getConfiguredRuntimeProvider,
   type BeatyClawRuntime,
   type BeatyClawRuntimeProvider,
   type RuntimeMessageResult,
@@ -39,6 +40,7 @@ interface ConversationHubDeps {
   updateSessionStats: typeof updateSessionStats
   updateUsage: typeof updateUsage
   createRuntimeAdapter: typeof createRuntimeAdapter
+  getConfiguredRuntimeProvider: typeof getConfiguredRuntimeProvider
   countTokens: typeof countTokens
   nowSeconds: () => number
   logger: Pick<typeof logger, 'warn'>
@@ -61,6 +63,7 @@ const defaultDeps: ConversationHubDeps = {
   updateSessionStats,
   updateUsage,
   createRuntimeAdapter,
+  getConfiguredRuntimeProvider,
   countTokens,
   nowSeconds: () => Math.floor(Date.now() / 1000),
   logger,
@@ -91,7 +94,7 @@ export function createConversationHub(deps: Partial<ConversationHubDeps> = {}) {
   return {
     async receiveMessage(input: ConversationHubMessageInput): Promise<ConversationHubMessageResult> {
       const profile = input.profile || 'default'
-      const runtimeProvider = input.runtimeProvider || 'zylos'
+      const runtimeProvider = input.runtimeProvider || d.getConfiguredRuntimeProvider()
       const sessionId = stableSessionId(input.channel, input.externalUserId)
       const now = d.nowSeconds()
 
