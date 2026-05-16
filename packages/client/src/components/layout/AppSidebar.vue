@@ -102,6 +102,21 @@ function handleLogout() {
             </svg>
             <span>{{ t("sidebar.channels") }}</span>
           </button>
+          <button class="nav-item" :class="{ active: selectedKey === 'hermes.aiEngines' }" @click="handleNav('hermes.aiEngines')">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="4" y="4" width="16" height="16" rx="2" />
+              <rect x="9" y="9" width="6" height="6" rx="1" />
+              <path d="M9 1v3" />
+              <path d="M15 1v3" />
+              <path d="M9 20v3" />
+              <path d="M15 20v3" />
+              <path d="M20 9h3" />
+              <path d="M20 14h3" />
+              <path d="M1 9h3" />
+              <path d="M1 14h3" />
+            </svg>
+            <span>AI 引擎</span>
+          </button>
           <button class="nav-item" :class="{ active: selectedKey === 'hermes.skills' }" @click="handleNav('hermes.skills')">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
               <polygon points="12 2 2 7 12 12 22 7 12 2" />
