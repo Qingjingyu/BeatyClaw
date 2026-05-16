@@ -155,6 +155,44 @@ BeatyClaw / Agentic
 
 频道页是当前产品最重要的外部入口。当前页面顶部有“外部连接器概览”，底部保留详细平台配置。
 
+### Web 对话：已接入统一 Conversation Hub
+
+当前状态：本地代码、构建和线上 Web 页面级验收已完成。
+
+已完成：
+
+- Web 聊天框不再绕过产品消息层。
+- Web 入站消息进入 BeatyClaw Conversation Hub。
+- Conversation Hub 复用前端传入的 `session_id`，避免 Web 历史产生另一套隐藏会话。
+- Conversation Hub 写入用户消息、AI 回复、usage 和 runtime trace。
+- Socket.IO 仍向前端发送 `run.started`、`message.delta`、`run.completed` / `run.failed`，保持聊天 UI 的即时反馈。
+- 历史 / 监控详情接口返回 `runtime_trace`，前端可看到：
+  - 来源 channel
+  - runtime provider
+  - runtime model
+  - hxa channel / message id
+  - 是否派发 worker-bot
+  - 调用状态 / 错误
+
+正式流程：
+
+```text
+Web Chat
+→ ChatRunSocket
+→ BeatyClaw Conversation Hub
+→ Runtime SDK
+→ 部署级 Runtime provider
+→ ChatRunSocket events
+→ Web 回复 + Web 历史追踪
+```
+
+关键实现：
+
+- `packages/server/src/services/hermes/chat-run-socket.ts`
+- `packages/server/src/services/agentic/conversation-hub.ts`
+- `packages/server/src/controllers/hermes/sessions.ts`
+- `packages/client/src/components/hermes/chat/ConversationMonitorPane.vue`
+
 ### 微信：已跑通真实闭环
 
 当前状态：已配置，runtime 运行中。
@@ -404,13 +442,28 @@ Runtime 状态和切换相关测试：
 npm run test -- tests/server/runtime-sdk.test.ts tests/server/runtime-controller.test.ts tests/client/runtime-api.test.ts tests/client/channels-runtime-status.test.ts tests/server/conversation-hub.test.ts tests/server/weixin-runtime.test.ts tests/server/telegram-runtime.test.ts
 ```
 
+第一版真实消息闭环相关测试：
+
+```bash
+npm run test -- tests/server/conversation-hub.test.ts tests/server/conversation-hub-web-history.test.ts tests/server/runtime-sdk.test.ts tests/server/runtime-controller.test.ts tests/server/weixin-runtime.test.ts tests/server/telegram-runtime.test.ts tests/client/runtime-api.test.ts tests/client/channels-runtime-status.test.ts tests/client/conversations-api.test.ts tests/client/conversation-monitor-pane.test.ts
+npm run build
+```
+
 当前已通过的验证记录：
 
-- 7 个测试文件通过。
-- 52 个测试通过。
+- Runtime 状态 / 切换：7 个测试文件通过。
+- 第一版真实消息闭环：10 个测试文件通过，36 个测试通过。
 - `npm run build` 通过。
 - Docker 镜像构建通过。
 - 线上容器重建通过。
+- Dockerfile 默认启动命令已修正，镜像可直接以 `node dist/server/index.js` 启动。
+
+当前部署注意：
+
+- 线上已部署镜像：`agentic-yoyoo-saas:message-loop-cmdfix-20260516230751`。
+- Web → Conversation Hub → Runtime SDK → zylos 已完成线上真实验收。
+- 微信 `.env` 已从旧目录恢复，`configured=true` 且 `runtime.running=true`。
+- 当前微信旧 token 返回 `session timeout`，需要重新扫码绑定后，才能完成微信真实消息验收。
 
 ## 部署说明
 
@@ -430,6 +483,7 @@ docker build -t agentic-yoyoo-saas:latest .
 
 注意：
 
+- Dockerfile 已覆盖基础镜像的入口为 `node`，默认命令为 `dist/server/index.js`；手动 `docker run` 时不需要再额外补启动命令。
 - 不要提交 `.env`、`hermes_data/`、`data/`、`dist/`、`node_modules/`。
 - 不要把服务器密码、OpenAI Key、Telegram Token、微信 Token 写进代码或 README。
 - README 只记录状态和验收方式，不记录真实密钥。

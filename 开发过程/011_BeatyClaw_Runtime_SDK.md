@@ -206,12 +206,11 @@ title = {ChannelLabel} {externalUserId}
 
 ### 当前边界
 
-- 只迁移微信。
+- 微信已迁移到 Conversation Hub。
 - Telegram 已按同样模式迁移到 Conversation Hub；飞书后续按同样模式迁移。
 - 不做联系人系统。
-- 不改历史页 UI。
 - 不做多租户 runtime 选择。
-- Web 流式对话暂时保留现有路径，避免破坏在线体验。
+- Web 流式对话已在 2026-05-16 迁移到 Conversation Hub，同时保留原有 Socket.IO 事件体验。
 
 ### Phase 3：OpenClaw / HMS Provider 设计
 
@@ -396,3 +395,266 @@ npm run build
 
 - 服务器部署更新后，在浏览器打开 `#/hermes/channels` 检查 `AI Runtime` 卡片。
 - Web 页面级真实对话仍建议在部署更新后用浏览器再发一条消息确认 UI 流程。
+
+## 2026-05-16 First Real Message Loop
+
+### 背景
+
+苏白明确第一版必须先证明真实消息闭环，而不是继续堆更多平台入口。
+
+目标闭环：
+
+```text
+Web / 微信
+↓
+BeatyClaw 产品消息层
+↓
+Conversation Hub
+↓
+Runtime SDK
+↓
+部署级 Runtime provider
+↓
+Web / 微信回复
+↓
+Web 历史可追踪
+```
+
+### 本轮实现
+
+Web 对话入口完成迁移：
+
+- `ChatRunSocket` 不再直接调用 Runtime adapter 完成 Web 回复。
+- Web 消息改为调用 `receiveConversationMessage()`。
+- Web 仍复用前端会话 `session_id`，避免产生隐藏的 `bc_web_*` 影子会话。
+- Conversation Hub 统一写入：
+  - user message
+  - assistant reply
+  - usage
+  - runtime trace
+- Socket.IO 继续向前端发送：
+  - `run.started`
+  - `message.delta`
+  - `run.completed`
+  - `run.failed`
+- 为避免重复落库，Conversation Hub 已持久化的 Web run 不再由 `flushResponseRunToDb()` 重复写 assistant 消息。
+
+新增 runtime trace：
+
+```json
+{
+  "channel": "web",
+  "runtime_provider": "zylos",
+  "runtime_model": "hxa:zylos-main",
+  "runtime_run_id": "hxa_...",
+  "hxa_channel_id": "channel-...",
+  "hxa_message_id": "message-...",
+  "worker_dispatched": true,
+  "worker_bot": "worker-bot",
+  "status": "ok"
+}
+```
+
+失败时也会写入 assistant fallback 和 trace：
+
+```json
+{
+  "channel": "weixin",
+  "runtime_provider": "openai-direct",
+  "status": "failed",
+  "error": "bad gateway"
+}
+```
+
+这解决的是“用户发消息没反应，前端/历史/后台都看不出发生了什么”的问题。
+
+### 前端可见性
+
+`ConversationMonitorPane` 已显示 assistant message 的 runtime trace：
+
+- `channel: web / weixin`
+- `runtime: zylos / openai-direct`
+- `model: ...`
+- `worker: worker-bot` 或 `worker: 未派发`
+- `status: ok / failed / empty`
+
+### 修改文件
+
+- `packages/server/src/services/agentic/conversation-hub.ts`
+- `packages/server/src/services/agentic/runtime-sdk.ts`
+- `packages/server/src/services/hermes/chat-run-socket.ts`
+- `packages/server/src/controllers/hermes/sessions.ts`
+- `packages/client/src/api/hermes/conversations.ts`
+- `packages/client/src/components/hermes/chat/ConversationMonitorPane.vue`
+- `tests/server/conversation-hub.test.ts`
+- `tests/server/conversation-hub-web-history.test.ts`
+- `tests/client/conversation-monitor-pane.test.ts`
+
+### 验证
+
+已通过：
+
+```bash
+npm run test -- tests/server/conversation-hub.test.ts tests/server/conversation-hub-web-history.test.ts tests/server/runtime-sdk.test.ts tests/server/runtime-controller.test.ts tests/server/weixin-runtime.test.ts tests/server/telegram-runtime.test.ts tests/client/runtime-api.test.ts tests/client/channels-runtime-status.test.ts tests/client/conversations-api.test.ts tests/client/conversation-monitor-pane.test.ts
+```
+
+结果：
+
+- 10 个测试文件通过。
+- 36 个测试通过。
+
+已通过：
+
+```bash
+npm run build
+```
+
+结果：
+
+- 前端生产构建通过。
+- server TypeScript 检查通过。
+- worker-bot TypeScript 检查通过。
+- server / worker-bot bundle 构建通过。
+
+### 线上部署记录
+
+本地代码完成后，首次同步服务器时命令：
+
+```bash
+rsync -az --delete --exclude '.git' --exclude 'node_modules' --exclude 'dist' --exclude 'hermes_data' --exclude '.env' --exclude '.DS_Store' ./ ubuntu@43.160.215.230:/home/ubuntu/agent-stack/agentic-src/
+```
+
+返回：
+
+```text
+Permission denied (publickey,password).
+```
+
+随后确认密码登录可用，已完成：
+
+1. 同步代码到 `/home/ubuntu/agent-stack/agentic-src/`。
+2. 构建新 Docker 镜像：`agentic-yoyoo-saas:message-loop-20260516224412`。
+3. 临时容器健康检查通过。
+4. 温和替换线上 `agentic` 容器。
+5. 旧容器备份为：`agentic-prev-20260516224722`。
+
+线上健康检查：
+
+```text
+http://127.0.0.1:3457/health
+```
+
+返回 Web 服务可用；`gateway=stopped` 是当前 Agentic 部署模式下的既有状态。
+
+### Dockerfile 启动命令修正
+
+部署验收时发现 Dockerfile 末尾同时存在：
+
+```dockerfile
+CMD ["dist/server/index.js"]
+CMD []
+```
+
+Docker 只会保留最后一个 `CMD`，导致镜像默认命令为空；当容器没有显式传入 `dist/server/index.js` 时会直接退出。
+
+已修正为：
+
+```dockerfile
+ENTRYPOINT ["node"]
+CMD ["dist/server/index.js"]
+```
+
+修正后重新构建并部署镜像：
+
+```text
+agentic-yoyoo-saas:message-loop-cmdfix-20260516230751
+```
+
+验证记录：
+
+- 临时容器不显式传入启动命令，容器保持运行。
+- 临时容器第 8 秒健康检查通过。
+- 线上 `agentic` 已切换到该镜像。
+- 线上 `http://127.0.0.1:3457/health` 返回 `status=ok`。
+
+后续同事按镜像默认方式启动时，不需要再额外补命令。
+
+### 线上 Web 验收
+
+浏览器打开：
+
+```text
+https://agent.aibosss.com/#/hermes/chat
+```
+
+发送：
+
+```text
+线上闭环验收：请回复 BeatyClaw Web loop ok，并简单说明当前 channel 和 runtime。
+```
+
+页面收到回复：
+
+```text
+BeatyClaw Web loop ok
+
+当前 channel：web inbound
+当前 runtime：agentic-client API 对话运行环境
+```
+
+随后读取历史接口：
+
+```text
+GET /api/hermes/sessions/conversations/{session_id}/messages?humanOnly=false
+```
+
+证据：
+
+- session `workspace=channel:web`
+- `message_count=2`
+- assistant `runtime_trace.channel=web`
+- assistant `runtime_trace.runtime_provider=zylos`
+- assistant `runtime_trace.runtime_model=hxa:zylos-main`
+- assistant `runtime_trace.hxa_channel_id` 有值
+- assistant `runtime_trace.hxa_message_id` 有值
+- assistant `runtime_trace.worker_dispatched=false`
+- assistant `runtime_trace.status=ok`
+
+结论：Web 真实消息闭环已通过线上验收。
+
+### 线上微信状态
+
+部署后发现当前挂载目录 `/home/agent/.hermes` 缺 `.env`，导致微信显示未配置。已从旧目录恢复：
+
+```text
+/home/ubuntu/agent-stack/agentic/data/hermes/.env
+→ /home/ubuntu/agent-stack/agentic-hermes/.env
+```
+
+恢复后微信状态：
+
+- `configured=true`
+- `runtime.running=true`
+- `account_id` 有值
+- `last_error=session timeout`
+
+结论：微信 runtime 代码和配置读取已恢复，但旧 iLink token 已过期。还需要重新扫码绑定，然后发送一条新微信消息，才能完成微信真实消息闭环验收。
+
+### 当前结论
+
+代码层面的第一版闭环已经具备：
+
+- Web → Conversation Hub → Runtime SDK。
+- 微信 → Conversation Hub → Runtime SDK。
+- Web 历史可看到微信会话。
+- Runtime trace 可展示 channel / runtime / worker-bot 状态。
+- 失败会写入 fallback 回复和 trace。
+
+当前 Goal 还不能标记完成，因为微信真实发送验收仍被旧 token `session timeout` 阻塞。需要苏白在频道页重新扫码绑定微信后，再发一条微信消息验收：
+
+1. `messages_seen` 增加。
+2. `messages_received` 增加。
+3. `messages_forwarded` 增加。
+4. `replies_sent` 增加。
+5. Web 历史出现 `workspace=channel:weixin` 会话。
+6. assistant message 有 `runtime_trace`。
