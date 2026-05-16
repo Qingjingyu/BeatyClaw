@@ -5,6 +5,7 @@ import { useI18n } from 'vue-i18n'
 import { useSettingsStore } from '@/stores/hermes/settings'
 import PlatformSettings from '@/components/hermes/settings/PlatformSettings.vue'
 import { fetchHxaOverview, type HxaOverview } from '@/api/agentic/hxa'
+import { fetchRuntimeStatus, type RuntimeStatusResponse } from '@/api/hermes/runtime'
 import {
   fetchTelegramStatus,
   fetchWeixinQrCode,
@@ -21,6 +22,9 @@ const message = useMessage()
 const hxaOverview = ref<HxaOverview | null>(null)
 const hxaLoading = ref(false)
 const hxaError = ref('')
+const runtimeStatus = ref<RuntimeStatusResponse | null>(null)
+const runtimeLoading = ref(false)
+const runtimeError = ref('')
 const connectorLoading = ref(false)
 const connectorSaving = ref<Record<string, boolean>>({})
 const weixinStatus = ref<ConnectorStatus | null>(null)
@@ -54,9 +58,27 @@ const latestConnectorActivity = computed(() => {
   return candidates.sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime())[0]
 })
 const hasConnectorError = computed(() => Boolean(weixinRuntime.value?.last_error || telegramRuntime.value?.last_error || hxaError.value))
+const runtime = computed(() => runtimeStatus.value?.runtime || null)
+const runtimeState = computed(() => {
+  if (runtimeLoading.value) return { label: '检查中', tone: 'default' as const, caption: '正在读取部署 Runtime 状态' }
+  if (runtimeError.value) return { label: '读取失败', tone: 'error' as const, caption: runtimeError.value }
+  if (!runtime.value) return { label: '未知', tone: 'default' as const, caption: '尚未读取 Runtime 状态' }
+  if (runtime.value.mode === 'unsupported') return { label: '未支持', tone: 'error' as const, caption: runtime.value.detail || '当前 provider 尚未实现 adapter' }
+  if (!runtime.value.available) return { label: '未配置', tone: 'warning' as const, caption: runtime.value.detail || '缺少必要部署配置' }
+  return { label: '已连接', tone: 'success' as const, caption: runtime.value.detail || '当前 Runtime 可用' }
+})
+const runtimeMissingText = computed(() => {
+  const missing = runtime.value?.missingConfig || []
+  return missing.length ? missing.join('、') : '无'
+})
+const runtimeCapabilityText = computed(() => {
+  const capabilities = runtime.value?.capabilities || []
+  return capabilities.length ? capabilities.join('、') : '暂无'
+})
 const overallState = computed(() => {
   if (!connectedCount.value) return { label: '未连接', tone: 'default' as const, caption: '还没有可用外部入口' }
-  if (hxaOverview.value && !hxaOverview.value.online) return { label: '部分异常', tone: 'warning' as const, caption: 'hxa-connect 当前不可用' }
+  if (runtime.value && !runtime.value.available) return { label: '部分异常', tone: 'warning' as const, caption: 'AI Runtime 当前不可用' }
+  if (hxaOverview.value && !hxaOverview.value.online && runtime.value?.provider === 'zylos') return { label: '部分异常', tone: 'warning' as const, caption: 'hxa-connect 当前不可用' }
   if (hasConnectorError.value) return { label: '需要处理', tone: 'warning' as const, caption: '存在运行错误，查看下方细分卡片' }
   if (runningCount.value > 0) return { label: '整体正常', tone: 'success' as const, caption: '已连接渠道正在运行' }
   return { label: '部分异常', tone: 'warning' as const, caption: '已配置渠道未运行' }
@@ -79,10 +101,9 @@ const issueSummary = computed(() => {
 const chainNodes = computed(() => [
   { label: '外部入口', state: (weixinRuntime.value?.running || telegramRuntime.value?.running) ? 'ok' : (connectedCount.value ? 'warn' : 'idle') },
   { label: 'Agentic', state: 'ok' },
-  { label: 'hxa-connect', state: hxaOverview.value?.online ? 'ok' : 'warn' },
-  { label: 'zylos-main', state: hxaOverview.value?.online ? 'ok' : 'warn' },
-  { label: 'worker-bot', state: Number(hxaStats.value.online_bot_count || 0) > 0 ? 'ok' : 'warn' },
-  { label: 'GPT-5.5', state: 'ok' },
+  { label: 'Runtime SDK', state: runtime.value?.available ? 'ok' : 'warn' },
+  { label: runtime.value?.provider || 'AI Runtime', state: runtime.value?.available ? 'ok' : 'warn' },
+  { label: runtime.value?.provider === 'zylos' ? 'worker-bot' : '模型 API', state: runtime.value?.available ? 'ok' : 'warn' },
 ])
 const connectors = computed(() => [
   {
@@ -139,6 +160,18 @@ async function loadHxaOverview() {
     hxaError.value = err instanceof Error ? err.message : String(err)
   } finally {
     hxaLoading.value = false
+  }
+}
+
+async function loadRuntimeStatus() {
+  runtimeLoading.value = true
+  runtimeError.value = ''
+  try {
+    runtimeStatus.value = await fetchRuntimeStatus()
+  } catch (err) {
+    runtimeError.value = err instanceof Error ? err.message : String(err)
+  } finally {
+    runtimeLoading.value = false
   }
 }
 
@@ -258,6 +291,7 @@ async function saveFeishuCredentials() {
 onMounted(() => {
   refreshConnectors()
   loadHxaOverview()
+  loadRuntimeStatus()
 })
 
 onUnmounted(() => {
@@ -269,7 +303,7 @@ onUnmounted(() => {
   <div class="channels-view">
     <header class="page-header">
       <h2 class="header-title">{{ t('sidebar.channels') }}</h2>
-      <NButton size="small" quaternary :loading="hxaLoading" @click="loadHxaOverview">
+      <NButton size="small" quaternary :loading="hxaLoading || runtimeLoading" @click="() => { loadHxaOverview(); loadRuntimeStatus() }">
         刷新
       </NButton>
     </header>
@@ -387,6 +421,55 @@ onUnmounted(() => {
             </div>
           </div>
         </div>
+      </section>
+
+      <section class="runtime-panel">
+        <div class="section-heading">
+          <div>
+            <h3>AI Runtime</h3>
+            <p>当前部署接入的底层 AI 能力，不由终端用户手动切换。</p>
+          </div>
+          <NTag :type="runtimeState.tone" round>
+            {{ runtimeState.label }}
+          </NTag>
+        </div>
+
+        <NSpin :show="runtimeLoading">
+          <div class="runtime-grid">
+            <div class="metric-card">
+              <span class="metric-label">Provider</span>
+              <strong>{{ runtime?.provider || runtimeStatus?.provider || '-' }}</strong>
+            </div>
+            <div class="metric-card">
+              <span class="metric-label">状态</span>
+              <strong>{{ runtimeState.label }}</strong>
+            </div>
+            <div class="metric-card">
+              <span class="metric-label">缺失配置</span>
+              <strong>{{ runtimeMissingText }}</strong>
+            </div>
+            <div class="metric-card">
+              <span class="metric-label">能力</span>
+              <strong>{{ runtimeCapabilityText }}</strong>
+            </div>
+          </div>
+
+          <NAlert v-if="runtimeError || runtimeState.caption" :type="runtime?.available ? 'success' : 'warning'" :bordered="false" class="runtime-alert">
+            {{ runtimeError || runtimeState.caption }}
+          </NAlert>
+
+          <div v-if="runtime?.checks?.length" class="runtime-checks">
+            <div v-for="check in runtime.checks" :key="check.key" class="runtime-check">
+              <div>
+                <strong>{{ check.label }}</strong>
+                <span>{{ check.key }}</span>
+              </div>
+              <NTag :type="check.ok ? 'success' : (check.required ? 'warning' : 'default')" size="small" round>
+                {{ check.ok ? '正常' : (check.required ? '缺失' : '未设置') }}
+              </NTag>
+            </div>
+          </div>
+        </NSpin>
       </section>
 
       <section class="hxa-panel">
@@ -548,6 +631,7 @@ onUnmounted(() => {
 
 .overview-panel,
 .connectors-panel,
+.runtime-panel,
 .hxa-panel {
   width: 100%;
   max-width: 1440px;
@@ -805,10 +889,19 @@ onUnmounted(() => {
   margin-bottom: 14px;
 }
 
-.hxa-grid {
+.runtime-alert {
+  margin-top: 12px;
+}
+
+.hxa-grid,
+.runtime-grid {
   display: grid;
   grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 10px;
+}
+
+.runtime-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
 .metric-card {
@@ -826,6 +919,41 @@ onUnmounted(() => {
     font-size: 22px;
     font-weight: 650;
     line-height: 1;
+  }
+}
+
+.runtime-checks {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.runtime-check {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid $border-light;
+  border-radius: $radius-sm;
+  background: $bg-secondary;
+
+  strong,
+  span {
+    display: block;
+  }
+
+  strong {
+    color: $text-primary;
+    font-size: 13px;
+    font-weight: 600;
+  }
+
+  span {
+    margin-top: 3px;
+    color: $text-muted;
+    font-size: 12px;
+    word-break: break-all;
   }
 }
 
@@ -952,7 +1080,8 @@ onUnmounted(() => {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .hxa-grid {
+  .hxa-grid,
+  .runtime-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
@@ -968,7 +1097,8 @@ onUnmounted(() => {
   }
 
   .overview-metrics,
-  .hxa-grid {
+  .hxa-grid,
+  .runtime-grid {
     grid-template-columns: 1fr;
   }
 
