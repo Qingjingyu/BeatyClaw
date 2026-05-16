@@ -31,7 +31,7 @@ import {
   getAgenticRuntimeTarget,
   mapOpenAIChatCompletionChunk,
 } from '../agentic/runtime'
-import { createRuntimeAdapter } from '../agentic/runtime-sdk'
+import { createConfiguredRuntimeAdapter } from '../agentic/runtime-sdk'
 import { getYoyooSessionCookieName, getYoyooUserBySession } from '../yoyoo-auth'
 
 /**
@@ -928,14 +928,27 @@ export class ChatRunSocket {
       body.stream = true
       body.store = false
 
-      const hxaRun = agenticRuntime
-        ? await createRuntimeAdapter('zylos').sendMessage({
+      const runtimeAdapter = createConfiguredRuntimeAdapter()
+      const runtimeStatus = runtimeAdapter.getStatus()
+      let hxaRun = null
+      if (runtimeStatus.available || runtimeAdapter.provider === 'zylos') {
+        hxaRun = await runtimeAdapter.sendMessage({
           sessionId: session_id,
           channel: 'web',
           text: input,
-          metadata: { profile, model },
+          metadata: { profile, model, runtimeProvider: runtimeAdapter.provider },
         })
-        : null
+      } else {
+        const queueLen = session_id ? this.sessionMap.get(session_id)?.queue?.length ?? 0 : 0
+        if (session_id) await this.markCompleted(socket, session_id, { event: 'run.failed' })
+        emit('run.failed', {
+          event: 'run.failed',
+          error: `Runtime ${runtimeAdapter.provider} is ${runtimeStatus.mode}`,
+          queue_remaining: queueLen,
+        })
+        if (session_id && queueLen > 0) this.dequeueNextQueuedRun(socket, session_id)
+        return
+      }
       if (hxaRun) {
         const state = session_id ? this.sessionMap.get(session_id) : undefined
         if (state && runMarker) {
