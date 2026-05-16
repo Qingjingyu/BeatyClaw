@@ -148,6 +148,71 @@ runtime.sendMessage({
 - 微信真实消息仍能回复。
 - Telegram 保存 token 后仍能进入相同链路。
 
+## 2026-05-16 Product Conversation Hub
+
+### 背景
+
+Runtime SDK 只是 AI 能力边界，但产品还需要自己的统一消息层。
+
+正确产品路径应该是：
+
+```text
+微信 / Telegram / 飞书 / Web
+↓
+BeatyClaw Product Conversation Hub
+↓
+产品 session / messages / usage
+↓
+Runtime SDK
+↓
+产品 session / messages / usage
+↓
+原渠道回复
+```
+
+这样 Web 端不再只是一个单独聊天框，而是所有渠道对话的总工作台。
+
+### 本轮实现
+
+新增：
+
+- `packages/server/src/services/agentic/conversation-hub.ts`
+- `tests/server/conversation-hub.test.ts`
+
+改动：
+
+- 微信 runtime 收到入站消息后不再直接调用 hxa/zylos。
+- 微信 runtime 改为调用 `receiveConversationMessage()`。
+- Conversation Hub 负责：
+  - 按 `channel + externalUserId` 创建稳定产品 session。
+  - 写入用户消息。
+  - 调用 Runtime SDK。
+  - 写入 AI 回复。
+  - 更新 session stats。
+  - 更新 usage。
+  - 把回复文本返回给渠道 runtime。
+
+### 当前会话策略
+
+第一版不改数据库结构，先复用现有 `sessions` / `messages` / `session_usage`：
+
+```text
+session_id = bc_{channel}_{sha256(channel:externalUserId).slice(0, 24)}
+workspace = channel:{channel}
+title = {ChannelLabel} {externalUserId}
+```
+
+这能保证同一个微信用户持续进入同一个 Web 可见会话。
+
+### 当前边界
+
+- 只迁移微信。
+- Telegram / 飞书后续按同样模式迁移。
+- 不做联系人系统。
+- 不改历史页 UI。
+- 不做多租户 runtime 选择。
+- Web 流式对话暂时保留现有路径，避免破坏在线体验。
+
 ### Phase 3：OpenClaw / HMS Provider 设计
 
 等 Zylos provider 稳定后，再分别设计：
