@@ -220,6 +220,76 @@ describe('conversation DB service', () => {
     )
   })
 
+  it('returns runtime trace from DB-backed conversation detail', async () => {
+    ensureSqliteAvailable()
+    const { DatabaseSync } = await import('node:sqlite')
+    const db = new DatabaseSync(join(profileDirState.value, 'state.db'))
+    createSchema(db)
+
+    insertSession(db, {
+      id: 'bc_weixin_session',
+      parent_session_id: null,
+      source: 'api_server',
+      model: 'runtime:zylos',
+      title: 'Weixin wx-user-1',
+      started_at: 100,
+      ended_at: 110,
+      end_reason: null,
+      message_count: 2,
+      tool_call_count: 0,
+      input_tokens: 5,
+      output_tokens: 8,
+      cache_read_tokens: 0,
+      cache_write_tokens: 0,
+      reasoning_tokens: 0,
+      billing_provider: 'zylos',
+      estimated_cost_usd: 0,
+      actual_cost_usd: 0,
+      cost_status: 'estimated',
+    })
+    insertMessage(db, { id: 1, session_id: 'bc_weixin_session', role: 'user', content: '微信问题', timestamp: 101 })
+    insertMessage(db, {
+      id: 2,
+      session_id: 'bc_weixin_session',
+      role: 'assistant',
+      content: '微信回复',
+      timestamp: 102,
+      reasoning_details: JSON.stringify({
+        channel: 'weixin',
+        runtime_provider: 'zylos',
+        runtime_model: 'hxa:zylos-main',
+        hxa_channel_id: 'channel-1',
+        worker_dispatched: true,
+        worker_bot: 'worker-bot',
+        status: 'ok',
+      }),
+    })
+    db.close()
+
+    const mod = await import('../../packages/server/src/db/hermes/conversations-db')
+    const summaries = await mod.listConversationSummariesFromDb()
+    expect(summaries).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: 'bc_weixin_session',
+        title: 'Weixin wx-user-1',
+      }),
+    ]))
+
+    const detail = await mod.getConversationDetailFromDb('bc_weixin_session')
+    expect(detail?.messages[1]).toMatchObject({
+      role: 'assistant',
+      content: '微信回复',
+      runtime_trace: expect.objectContaining({
+        channel: 'weixin',
+        runtime_provider: 'zylos',
+        runtime_model: 'hxa:zylos-main',
+        worker_dispatched: true,
+        worker_bot: 'worker-bot',
+        status: 'ok',
+      }),
+    })
+  })
+
   it('treats branched children as their own visible conversations', async () => {
     ensureSqliteAvailable()
     const { DatabaseSync } = await import('node:sqlite')

@@ -62,6 +62,7 @@ export interface ConversationMessage {
   role: 'user' | 'assistant'
   content: string
   timestamp: number
+  runtime_trace?: Record<string, unknown> | null
 }
 
 export interface ConversationDetail {

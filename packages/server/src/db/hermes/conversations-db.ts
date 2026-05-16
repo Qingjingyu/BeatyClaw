@@ -340,7 +340,22 @@ function aggregateSummary(rootId: string, byId: Map<string, ConversationSessionR
   }
 }
 
-function normalizeVisibleMessage(message: { id: number | string, session_id: string, role: string, content: unknown, timestamp: number }, fallbackTimestamp: number): ConversationMessage | null {
+function parseRuntimeTrace(value: unknown): Record<string, unknown> | null {
+  if (typeof value !== 'string' || !value.trim()) return null
+  try {
+    const parsed = JSON.parse(value)
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? parsed as Record<string, unknown>
+      : null
+  } catch {
+    return null
+  }
+}
+
+function normalizeVisibleMessage(
+  message: { id: number | string, session_id: string, role: string, content: unknown, timestamp: number, reasoning_details?: unknown },
+  fallbackTimestamp: number,
+): ConversationMessage | null {
   const role = safeText(message.role)
   const content = textFromContent(message.content).trim()
   if (!content) return null
@@ -355,6 +370,7 @@ function normalizeVisibleMessage(message: { id: number | string, session_id: str
     timestamp: Number.isFinite(Number(message.timestamp)) && Number(message.timestamp) > 0
       ? Number(message.timestamp)
       : fallbackTimestamp,
+    runtime_trace: parseRuntimeTrace(message.reasoning_details),
   }
 }
 
@@ -487,7 +503,7 @@ export async function getConversationDetailFromDb(sessionId: string, options: Co
     const ids = chain.map(session => session.id)
     const placeholders = ids.map(() => '?').join(', ')
     const rows = db.prepare(`
-      SELECT id, session_id, role, content, timestamp
+      SELECT id, session_id, role, content, timestamp, reasoning_details
       FROM messages
       WHERE session_id IN (${placeholders})
         AND role IN ('user', 'assistant')
@@ -506,6 +522,7 @@ export async function getConversationDetailFromDb(sessionId: string, options: Co
           role: String(row.role || ''),
           content: row.content,
           timestamp: normalizeNumber(row.timestamp),
+          reasoning_details: row.reasoning_details,
         }, session?.last_active || session?.started_at || 0)
       })
       .filter((message): message is ConversationMessage => !!message)

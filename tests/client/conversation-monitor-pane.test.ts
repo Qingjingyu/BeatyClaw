@@ -149,9 +149,11 @@ describe('ConversationMonitorPane', () => {
 
     const trace = wrapper.find('.conversation-monitor__runtime-trace')
     expect(trace.exists()).toBe(true)
-    expect(trace.text()).toContain('channel: weixin')
-    expect(trace.text()).toContain('runtime: zylos')
-    expect(trace.text()).toContain('worker: worker-bot')
+    expect(trace.text()).toContain('来源：微信')
+    expect(trace.text()).toContain('AI 层：zylos')
+    expect(trace.text()).toContain('模型：hxa:zylos-main')
+    expect(trace.text()).toContain('Worker：worker-bot')
+    expect(trace.text()).toContain('状态：成功')
   })
 
   it('shows when a reply did not dispatch worker-bot', async () => {
@@ -183,7 +185,7 @@ describe('ConversationMonitorPane', () => {
 
     await flushPromises()
 
-    expect(wrapper.find('.conversation-monitor__runtime-trace').text()).toContain('worker: 未派发')
+    expect(wrapper.find('.conversation-monitor__runtime-trace').text()).toContain('Worker：未派发')
   })
 
   it('ignores stale detail responses when selection changes quickly', async () => {

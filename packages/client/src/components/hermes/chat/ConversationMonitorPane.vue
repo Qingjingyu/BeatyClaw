@@ -29,14 +29,33 @@ function linkedSessionsLabel(count: number): string {
   return t('chat.linkedSessions', { count })
 }
 
+function channelLabel(channel?: string): string {
+  const labels: Record<string, string> = {
+    web: 'Web',
+    weixin: '微信',
+    telegram: 'Telegram',
+    feishu: '飞书',
+  }
+  return channel ? labels[channel] || channel : ''
+}
+
+function statusLabel(status?: string): string {
+  const labels: Record<string, string> = {
+    ok: '成功',
+    empty: '空回复',
+    failed: '失败',
+  }
+  return status ? labels[status] || status : ''
+}
+
 function runtimeTraceLabel(trace: ConversationDetail['messages'][number]['runtime_trace']): string {
   if (!trace) return ''
   const parts = [
-    trace.channel ? `channel: ${trace.channel}` : '',
-    trace.runtime_provider ? `runtime: ${trace.runtime_provider}` : '',
-    trace.runtime_model ? `model: ${trace.runtime_model}` : '',
-    trace.worker_dispatched ? `worker: ${trace.worker_bot || 'worker-bot'}` : 'worker: 未派发',
-    trace.status ? `status: ${trace.status}` : '',
+    trace.channel ? `来源：${channelLabel(trace.channel)}` : '',
+    trace.runtime_provider ? `AI 层：${trace.runtime_provider}` : '',
+    trace.runtime_model ? `模型：${trace.runtime_model}` : '',
+    trace.worker_dispatched ? `Worker：${trace.worker_bot || 'worker-bot'}` : 'Worker：未派发',
+    trace.status ? `状态：${statusLabel(trace.status)}` : '',
   ].filter(Boolean)
   return parts.join(' · ')
 }
