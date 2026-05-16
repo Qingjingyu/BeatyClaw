@@ -236,3 +236,55 @@ npm run build
 - SDK 测试通过。
 - 现有 Agentic runtime 测试不受影响。
 - 整体构建通过。
+
+## 2026-05-16 Weixin Runtime Diagnostics
+
+### 背景
+
+线上微信 runtime 已配置并持续轮询，但真实验收时一直没有生成产品会话：
+
+- `running=true`
+- `configured=true`
+- `cursor_ready=true`
+- `primed=true`
+- `messages_received=0`
+- Web 会话列表为空
+
+检查 `/home/agent/.hermes/weixin-runtime-state.json` 发现历史状态里存在多个微信 message id，说明 iLink 曾返回过消息，但当时没有足够运行时诊断区分：
+
+- 没收到新消息
+- priming 阶段跳过历史消息
+- recent id 去重跳过
+- 缺 `from_user_id` / `context_token` / 文本内容被过滤
+
+### 实现
+
+给 `packages/server/src/services/agentic/weixin-runtime.ts` 增加只读诊断字段：
+
+- `messages_seen`
+- `last_seen_message_at`
+- `last_skipped_reason`
+- `messages_skipped_recent`
+- `messages_skipped_unhandled`
+
+并新增 `getWeixinSkipReason()`，用于解释不处理某条消息的原因。
+
+### 验证
+
+已通过：
+
+```bash
+npm run test -- tests/server/weixin-runtime.test.ts tests/server/conversation-hub.test.ts tests/server/conversation-hub-web-history.test.ts
+npm run build
+```
+
+线上诊断版部署后，连续观察约 1 分钟：
+
+- `last_poll_at` 持续更新
+- `messages_seen=0`
+- `messages_received=0`
+- `messages_forwarded=0`
+- `replies_sent=0`
+- Web 会话列表仍为空
+
+当前判断：Conversation Hub 链路代码已就绪，但真实微信闭环还缺新的 iLink 入站事件作为验收样本。下一步需要在微信端重新发送新消息，再通过诊断字段确认消息是否被 iLink 返回、是否被处理、是否写入 Web 历史。
