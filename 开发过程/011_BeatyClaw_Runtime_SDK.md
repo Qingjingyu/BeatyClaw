@@ -352,3 +352,47 @@ GET /api/hermes/runtime/status
 - 不做多租户 Runtime 隔离。
 - HMS / OpenClaw 仍是预留 provider，后续单独实现。
 - `openai-direct` 只提供基础聊天能力，不等价于 Zylos/HXA 多 Agent。
+
+## 2026-05-16 Runtime Status Visualization
+
+### 背景
+
+Runtime provider 已经可以通过部署环境切换，但产品层还需要让管理员看到当前到底接了哪个底座、能不能用、缺什么配置。否则换底座时只能看日志，不利于交接和运维。
+
+### 实现
+
+- `/api/hermes/runtime/status` 增强返回：
+  - `runtime.available`
+  - `runtime.mode`
+  - `runtime.missingConfig`
+  - `runtime.checks`
+- `zylos` provider 会检查：
+  - `AGENTIC_HXA_RUNTIME_ENABLED`
+  - `AGENTIC_HXA_TOKEN`
+  - `AGENTIC_HXA_BASE_URL`
+- `openai-direct` provider 会检查：
+  - `OPENAI_API_KEY`
+  - `OPENAI_BASE_URL`
+- 前端 `链接 / 频道` 页面新增 `AI Runtime` 状态卡片，显示 provider、状态、缺失配置、能力列表和逐项检查结果。
+
+### 验收记录
+
+已通过：
+
+```bash
+npm run test -- tests/server/runtime-sdk.test.ts tests/server/runtime-controller.test.ts tests/client/runtime-api.test.ts tests/client/channels-runtime-status.test.ts tests/server/conversation-hub.test.ts tests/server/weixin-runtime.test.ts tests/server/telegram-runtime.test.ts
+npm run build
+```
+
+真实 provider 检查：
+
+- `BEATYCLAW_RUNTIME_PROVIDER=openai-direct` 时，状态接口可识别为 `active`，说明配置读取和 provider 选择链路有效。
+- 本机当前 shell 中的 `OPENAI_API_KEY` 调用 `https://key.cosark.com.cn/v1/chat/completions` 返回 `INVALID_API_KEY`。
+- 服务器 `agentic` 容器中使用已有 `OPENAI_API_KEY` / `OPENAI_BASE_URL` 完成 openai-direct 真实调用，返回：`BeatyClaw openai-direct 服务器验收通过。`
+- `BEATYCLAW_RUNTIME_PROVIDER=zylos` 时，状态检查可正确指出缺失 `AGENTIC_HXA_RUNTIME_ENABLED` 和 `AGENTIC_HXA_TOKEN`，说明默认 zylos 回归诊断有效。
+- 服务器 `agentic` 容器中使用已有 HXA runtime 环境完成 zylos 真实调用，返回：`BeatyClaw zylos 回归验收通过`。
+
+### 下一步
+
+- 服务器部署更新后，在浏览器打开 `#/hermes/channels` 检查 `AI Runtime` 卡片。
+- Web 页面级真实对话仍建议在部署更新后用浏览器再发一条消息确认 UI 流程。

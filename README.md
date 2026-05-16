@@ -211,7 +211,36 @@ AGENTIC_DEFAULT_MODEL=gpt-5.5
 GET /api/hermes/runtime/status
 ```
 
-该接口用于部署后确认当前接入的是 `zylos`、`openai-direct`，还是后续实现的 `hms` / `openclaw`。
+该接口用于部署后确认当前接入的是 `zylos`、`openai-direct`，还是后续实现的 `hms` / `openclaw`。返回字段包括：
+
+- `provider`：当前部署选择的 Runtime provider。
+- `runtime.available` / `runtime.mode`：当前 Runtime 是否可用。
+- `runtime.missingConfig`：缺失的关键环境变量。
+- `runtime.checks`：每个关键配置项的检查结果。
+
+前端 `链接 / 频道` 页面顶部已显示 `AI Runtime` 状态卡片，用于直接查看当前 provider、状态、缺失配置和能力列表。
+
+真实切换验收：
+
+```bash
+# openai-direct 验收
+BEATYCLAW_RUNTIME_PROVIDER=openai-direct
+OPENAI_BASE_URL=https://api.openai.com
+OPENAI_API_KEY=...
+AGENTIC_DEFAULT_MODEL=gpt-5.5
+
+# zylos 回归
+BEATYCLAW_RUNTIME_PROVIDER=zylos
+AGENTIC_HXA_RUNTIME_ENABLED=1
+AGENTIC_HXA_TOKEN=...
+AGENTIC_HXA_BASE_URL=http://127.0.0.1:4800
+```
+
+验收记录：
+
+- 本地：`openai-direct` 状态检查可识别为 `active`，但当前 shell 中的 API Key 请求返回 `INVALID_API_KEY`；默认 `zylos` 状态检查可正确指出缺失 `AGENTIC_HXA_RUNTIME_ENABLED` 和 `AGENTIC_HXA_TOKEN`。
+- 服务器：`openai-direct` 使用服务器容器环境完成真实调用，返回 `BeatyClaw openai-direct 服务器验收通过。`
+- 服务器：默认 `zylos` 使用 hxa/zylos-main 完成真实调用，返回 `BeatyClaw zylos 回归验收通过`。
 
 ### Telegram：代码完成，等待真实 Bot Token
 
@@ -367,6 +396,12 @@ npm run build
 
 ```bash
 npm run test -- tests/server/agentic-runtime.test.ts tests/server/hxa-main-runtime.test.ts tests/server/hermes-kanban-service.test.ts tests/server/hxa-connect.test.ts tests/client/hxa-api.test.ts tests/server/weixin-runtime.test.ts tests/server/telegram-runtime.test.ts
+```
+
+Runtime 状态和切换相关测试：
+
+```bash
+npm run test -- tests/server/runtime-sdk.test.ts tests/server/runtime-controller.test.ts tests/client/runtime-api.test.ts tests/client/channels-runtime-status.test.ts tests/server/conversation-hub.test.ts tests/server/weixin-runtime.test.ts tests/server/telegram-runtime.test.ts
 ```
 
 当前已通过的验证记录：
