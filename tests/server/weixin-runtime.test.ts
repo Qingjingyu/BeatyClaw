@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import {
   buildHxaInputFromWeixin,
   extractWeixinText,
+  getWeixinSkipReason,
   getWeixinRuntimeStatus,
   resetWeixinRuntimeForTest,
   shouldHandleWeixinMessage,
@@ -36,6 +37,21 @@ describe('Weixin runtime helpers', () => {
     expect(shouldHandleWeixinMessage({ ...base, item_list: [] }, 'bot-1')).toBe(false)
   })
 
+  it('reports concrete skip reasons for unhandled messages', () => {
+    const base = {
+      from_user_id: 'user-1',
+      context_token: 'ctx-1',
+      item_list: [{ type: 1, text_item: { text: '你好' } }],
+    }
+
+    expect(getWeixinSkipReason(base, 'bot-1')).toBeNull()
+    expect(getWeixinSkipReason({ ...base, message_type: 2 }, 'bot-1')).toBe('outbound_message')
+    expect(getWeixinSkipReason({ ...base, from_user_id: 'bot-1' }, 'bot-1')).toBe('self_message')
+    expect(getWeixinSkipReason({ ...base, from_user_id: undefined }, 'bot-1')).toBe('missing_from_user_id')
+    expect(getWeixinSkipReason({ ...base, context_token: undefined }, 'bot-1')).toBe('missing_context_token')
+    expect(getWeixinSkipReason({ ...base, item_list: [] }, 'bot-1')).toBe('missing_text')
+  })
+
   it('builds hxa input with source metadata and user text', () => {
     expect(buildHxaInputFromWeixin({
       from_user_id: 'user-1',
@@ -52,6 +68,9 @@ describe('Weixin runtime helpers', () => {
     const status = getWeixinRuntimeStatus()
     expect(status.running).toBe(false)
     expect(status.configured).toBe(false)
+    expect(status.messages_seen).toBe(0)
+    expect(status.messages_skipped_recent).toBe(0)
+    expect(status.messages_skipped_unhandled).toBe(0)
     expect(JSON.stringify(status)).not.toContain('token')
   })
 })

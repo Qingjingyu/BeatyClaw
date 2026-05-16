@@ -31,10 +31,15 @@ export interface WeixinRuntimeStatus {
   primed: boolean
   last_poll_at?: string
   last_message_at?: string
+  last_seen_message_at?: string
+  last_skipped_reason?: string
   last_error?: string
+  messages_seen: number
   messages_received: number
   messages_forwarded: number
   replies_sent: number
+  messages_skipped_recent: number
+  messages_skipped_unhandled: number
 }
 
 interface WeixinRuntimeState {
@@ -153,11 +158,17 @@ export function extractWeixinText(message: WeixinInboundMessage): string {
 }
 
 export function shouldHandleWeixinMessage(message: WeixinInboundMessage, accountId: string): boolean {
-  if (!message) return false
-  if (message.message_type === 2) return false
-  if (message.from_user_id && message.from_user_id === accountId) return false
-  if (!message.from_user_id || !message.context_token) return false
-  return Boolean(extractWeixinText(message))
+  return getWeixinSkipReason(message, accountId) === null
+}
+
+export function getWeixinSkipReason(message: WeixinInboundMessage, accountId: string): string | null {
+  if (!message) return 'missing_message'
+  if (message.message_type === 2) return 'outbound_message'
+  if (message.from_user_id && message.from_user_id === accountId) return 'self_message'
+  if (!message.from_user_id) return 'missing_from_user_id'
+  if (!message.context_token) return 'missing_context_token'
+  if (!extractWeixinText(message)) return 'missing_text'
+  return null
 }
 
 export function buildHxaInputFromWeixin(message: WeixinInboundMessage, text: string): string {
@@ -236,10 +247,15 @@ class WeixinRuntime {
   private state: WeixinRuntimeState = { version: 1, recent_ids: [], primed: false }
   private lastPollAt: string | undefined
   private lastMessageAt: string | undefined
+  private lastSeenMessageAt: string | undefined
+  private lastSkippedReason: string | undefined
   private lastError: string | undefined
+  private messagesSeen = 0
   private messagesReceived = 0
   private messagesForwarded = 0
   private repliesSent = 0
+  private messagesSkippedRecent = 0
+  private messagesSkippedUnhandled = 0
   private activeConfig: WeixinRuntimeConfig | null = null
 
   start(): void {
@@ -279,10 +295,15 @@ class WeixinRuntime {
       primed: Boolean(this.state.primed),
       last_poll_at: this.lastPollAt,
       last_message_at: this.lastMessageAt,
+      last_seen_message_at: this.lastSeenMessageAt,
+      last_skipped_reason: this.lastSkippedReason,
       last_error: this.lastError,
+      messages_seen: this.messagesSeen,
       messages_received: this.messagesReceived,
       messages_forwarded: this.messagesForwarded,
       replies_sent: this.repliesSent,
+      messages_skipped_recent: this.messagesSkippedRecent,
+      messages_skipped_unhandled: this.messagesSkippedUnhandled,
     }
   }
 
@@ -295,10 +316,15 @@ class WeixinRuntime {
     this.state = { version: 1, recent_ids: [], primed: false }
     this.lastPollAt = undefined
     this.lastMessageAt = undefined
+    this.lastSeenMessageAt = undefined
+    this.lastSkippedReason = undefined
     this.lastError = undefined
+    this.messagesSeen = 0
     this.messagesReceived = 0
     this.messagesForwarded = 0
     this.repliesSent = 0
+    this.messagesSkippedRecent = 0
+    this.messagesSkippedUnhandled = 0
     this.activeConfig = null
   }
 
@@ -330,9 +356,13 @@ class WeixinRuntime {
 
       if (updates.get_updates_buf) this.state.get_updates_buf = updates.get_updates_buf
       const messages = Array.isArray(updates.msgs) ? updates.msgs : []
+      this.messagesSeen += messages.length
+      if (messages.length > 0) this.lastSeenMessageAt = new Date().toISOString()
 
       if (!this.state.primed) {
         this.state.primed = true
+        this.messagesSkippedRecent += messages.length
+        if (messages.length > 0) this.lastSkippedReason = 'priming_existing_messages'
         this.rememberMessages(messages, config)
         saveState(config.statePath, this.state)
         logger.info({ skipped: messages.length }, '[weixin-runtime] primed cursor and skipped existing messages')
@@ -361,10 +391,35 @@ class WeixinRuntime {
 
   private async handleMessage(client: WeixinApiClient, config: WeixinRuntimeConfig, message: WeixinInboundMessage): Promise<void> {
     const key = this.messageKey(message, config)
-    if (!key || this.state.recent_ids?.includes(key)) return
+    if (!key) {
+      this.messagesSkippedUnhandled += 1
+      this.lastSkippedReason = 'missing_message_key'
+      logger.info({ reason: this.lastSkippedReason }, '[weixin-runtime] skipped message')
+      return
+    }
+    if (this.state.recent_ids?.includes(key)) {
+      this.messagesSkippedRecent += 1
+      this.lastSkippedReason = 'duplicate_recent_message'
+      logger.info({ reason: this.lastSkippedReason, key }, '[weixin-runtime] skipped message')
+      return
+    }
     this.addRecentId(key)
 
-    if (!shouldHandleWeixinMessage(message, config.accountId)) return
+    const skipReason = getWeixinSkipReason(message, config.accountId)
+    if (skipReason) {
+      this.messagesSkippedUnhandled += 1
+      this.lastSkippedReason = skipReason
+      logger.info({
+        reason: skipReason,
+        message_id: message.message_id,
+        client_id: message.client_id,
+        message_type: message.message_type,
+        has_from_user_id: Boolean(message.from_user_id),
+        has_context_token: Boolean(message.context_token),
+        item_count: message.item_list?.length || 0,
+      }, '[weixin-runtime] skipped message')
+      return
+    }
 
     const text = extractWeixinText(message)
     this.messagesReceived += 1
