@@ -462,8 +462,10 @@ npm run build
 
 - 线上已部署镜像：`agentic-yoyoo-saas:message-loop-cmdfix-20260516230751`。
 - Web → Conversation Hub → Runtime SDK → zylos 已完成线上真实验收。
-- 微信 `.env` 已从旧目录恢复，`configured=true` 且 `runtime.running=true`。
-- 当前微信旧 token 返回 `session timeout`，需要重新扫码绑定后，才能完成微信真实消息验收。
+- 微信已重新绑定并完成真实消息闭环验收。
+- 微信最新验收链路：`messages_seen=1`、`messages_received=1`、`messages_forwarded=1`、`replies_sent=1`。
+- Web 历史已出现 `workspace=channel:weixin` 会话，assistant `runtime_trace.status=ok`，`runtime_provider=zylos`，`runtime_model=hxa:zylos-main`。
+- 线上 `.env` 已固化 `AGENTIC_HXA_RUNTIME_ENABLED=1`、`BEATYCLAW_RUNTIME_PROVIDER=zylos`，HXA token 使用 `agentic-client` bot token，不再使用 admin secret。
 
 ## 部署说明
 

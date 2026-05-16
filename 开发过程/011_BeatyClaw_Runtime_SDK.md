@@ -631,30 +631,61 @@ GET /api/hermes/sessions/conversations/{session_id}/messages?humanOnly=false
 → /home/ubuntu/agent-stack/agentic-hermes/.env
 ```
 
-恢复后微信状态：
+恢复后曾出现两个线上配置问题：
 
-- `configured=true`
-- `runtime.running=true`
-- `account_id` 有值
-- `last_error=session timeout`
+1. 微信旧 iLink token 返回 `session timeout`，需要重新扫码绑定。
+2. HXA runtime 一度使用 admin secret 调 `/api/send`，hxa-connect 返回 `Invalid token`。`/api/send` 需要 bot token，不是 admin secret。
 
-结论：微信 runtime 代码和配置读取已恢复，但旧 iLink token 已过期。还需要重新扫码绑定，然后发送一条新微信消息，才能完成微信真实消息闭环验收。
+已修正：
 
-### 当前结论
+- 微信重新扫码绑定，当前账号为新 `account_id`。
+- `AGENTIC_HXA_RUNTIME_ENABLED` 固化为代码实际识别的 `1`。
+- `AGENTIC_HXA_TOKEN` 改为 `agentic-client` bot token。
+- `BEATYCLAW_RUNTIME_PROVIDER=zylos` 已写入线上 `.env`。
 
-代码层面的第一版闭环已经具备：
+### 线上微信真实验收
 
-- Web → Conversation Hub → Runtime SDK。
-- 微信 → Conversation Hub → Runtime SDK。
+苏白重新发送微信消息后，线上状态：
+
+- `messages_seen=1`
+- `messages_received=1`
+- `messages_forwarded=1`
+- `replies_sent=1`
+
+Web 历史会话：
+
+- session id：`bc_weixin_d3524c90a28ee09f3227206c`
+- `workspace=channel:weixin`
+- `model=runtime:zylos`
+- `message_count=6`
+
+最新 assistant message：
+
+```text
+你好，我在。你想让我帮你做什么？
+```
+
+最新 runtime trace：
+
+```json
+{
+  "channel": "weixin",
+  "runtime_provider": "zylos",
+  "runtime_model": "hxa:zylos-main",
+  "runtime_run_id": "hxa_b39302ac-05cb-4d89-adeb-008101704710_38c4764d-b867-44fa-9225-0394b105ea51",
+  "hxa_channel_id": "b39302ac-05cb-4d89-adeb-008101704710",
+  "hxa_message_id": "38c4764d-b867-44fa-9225-0394b105ea51",
+  "worker_dispatched": false,
+  "status": "ok"
+}
+```
+
+结论：第一版真实消息闭环已通过线上验收。
+
+当前已验证：
+
+- Web → Conversation Hub → Runtime SDK → zylos → Web 回复。
+- 微信 → Conversation Hub → Runtime SDK → zylos → 微信回复。
 - Web 历史可看到微信会话。
 - Runtime trace 可展示 channel / runtime / worker-bot 状态。
-- 失败会写入 fallback 回复和 trace。
-
-当前 Goal 还不能标记完成，因为微信真实发送验收仍被旧 token `session timeout` 阻塞。需要苏白在频道页重新扫码绑定微信后，再发一条微信消息验收：
-
-1. `messages_seen` 增加。
-2. `messages_received` 增加。
-3. `messages_forwarded` 增加。
-4. `replies_sent` 增加。
-5. Web 历史出现 `workspace=channel:weixin` 会话。
-6. assistant message 有 `runtime_trace`。
+- 失败会写入 fallback 回复和 trace，前端和历史可追踪。
