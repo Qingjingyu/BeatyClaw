@@ -1,6 +1,6 @@
 # BeatyClaw 数字员工
 
-BeatyClaw 数字员工是基于 `Yoyoo0.1 / hermes-web-ui` 改造出来的单用户 AI 工作台。当前目标不是做一个完整对外售卖的 SaaS，而是先把苏白自己的 Agent 工作台跑通：对话、历史、任务、看板、频道连接、技能、记忆、用量，以及外部平台消息进入多 Agent 后端的闭环。
+BeatyClaw 数字员工是基于 `Yoyoo0.1 / hermes-web-ui` 改造出来的单用户 AI 工作台。当前目标是先把 BeatyClaw 产品端独立出来：登录、对话、历史、任务、看板、频道连接、技能、记忆、用量和 AI 引擎卡槽先稳定运行，底层 AI 能力通过 HMS / COCO / OpenClaw / Zylos 等引擎安装接入。
 
 当前线上入口：`https://agent.aibosss.com`
 
@@ -9,11 +9,11 @@ BeatyClaw 数字员工是基于 `Yoyoo0.1 / hermes-web-ui` 改造出来的单用
 第一期产品形态：
 
 - 单用户工作台，不做注册、不做多租户、不做套餐支付。
-- 模型 API Key、hxa-connect、zylos-main、worker-bot、GPT-5.5 等运行环境由平台内置。
+- 默认不内置 AI 引擎。模型 API Key、hxa-connect、zylos-main、worker-bot、GPT-5.5 等能力属于可安装的底层 AI 引擎。
 - 用户只在“频道 / 链接”里填写外部平台连接信息，例如微信、Telegram、飞书。
 - 前端沿用 Yoyoo0.1 的工作台结构，但品牌和产品语义收口到 BeatyClaw 数字员工。
 
-我们当前不是简单部署原版 Hermes Web UI，而是在它的 UI 和基础能力上恢复 COCO / Zylos / hxa-connect 的产品能力。
+我们当前不是简单部署原版 Hermes Web UI，而是在它的 UI 和基础能力上形成 BeatyClaw 产品端，再通过 Runtime SDK 接入外部 AI 引擎。
 
 ## 当前架构
 
@@ -25,7 +25,10 @@ BeatyClaw 数字员工产品层
 Conversation Hub / Runtime SDK
         ↓
 部署级 Runtime provider
+        ├─ none：仅产品端，等待安装 AI 引擎
         ├─ zylos：hxa-connect → zylos-main → worker-bot / GPT-5.5
+        ├─ hms：计划接入
+        ├─ openclaw：计划接入
         └─ openai-direct：OpenAI-compatible API
         ↓
 返回到工作台或外部渠道，并写入产品会话历史
@@ -33,16 +36,14 @@ Conversation Hub / Runtime SDK
 
 当前线上容器：
 
-- `agentic`：Web UI + Koa BFF + 微信/Telegram runtime。
-- `hxa-connect`：多 Agent 消息总线。
-- `zylos`：主 Agent / zylos-main。
-- `hxa-worker-bot`：worker-bot 执行侧。
+- `agentic`：Web UI + Koa BFF + 产品端服务。
+- `hxa-connect` / `zylos` / `hxa-worker-bot`：历史 AI 能力端，产品端模式下不再要求运行。
 
 ## 技术栈
 
 - Frontend：Vue 3 + TypeScript + Vite + Naive UI。
 - Backend：Node.js + Koa + TypeScript。
-- Runtime：BeatyClaw Runtime SDK + 部署级 Runtime provider。默认 `zylos`，可通过 `BEATYCLAW_RUNTIME_PROVIDER=openai-direct` 接 OpenAI-compatible API。
+- Runtime：BeatyClaw Runtime SDK + 部署级 Runtime provider。默认 `none`，表示只运行产品端；安装引擎后可切到 `zylos`、`hms`、`openclaw` 或其他 adapter。
 - Storage：当前沿用本地 SQLite / Hermes profile 文件体系。
 - Build：`npm run build` 输出到 `dist/`。
 - Deploy：Docker 镜像 `agentic-yoyoo-saas:latest`。
@@ -242,8 +243,11 @@ BeatyClaw 的定位是产品层，不把 AI 能力层写死在产品代码里。
 当前支持：
 
 ```env
+BEATYCLAW_RUNTIME_PROVIDER=none
+# 默认：只运行 BeatyClaw 产品端，等待安装 AI 引擎
+
 BEATYCLAW_RUNTIME_PROVIDER=zylos
-# 默认：复用当前 hxa-connect / zylos-main / worker-bot 链路
+# 安装 zylos 引擎后，复用 hxa-connect / zylos-main / worker-bot 链路
 
 BEATYCLAW_RUNTIME_PROVIDER=openai-direct
 # 直连 OpenAI-compatible API，用于证明 BeatyClaw 可以脱离 Zylos 独立运行
@@ -258,14 +262,14 @@ AGENTIC_DEFAULT_MODEL=gpt-5.5
 GET /api/hermes/runtime/status
 ```
 
-该接口用于部署后确认当前接入的是 `zylos`、`openai-direct`，还是后续实现的 `hms` / `openclaw`。返回字段包括：
+该接口用于部署后确认当前是产品端 `none`，还是已接入 `zylos`、`openai-direct`、后续的 `hms` / `openclaw`。返回字段包括：
 
 - `provider`：当前部署选择的 Runtime provider。
 - `runtime.available` / `runtime.mode`：当前 Runtime 是否可用。
 - `runtime.missingConfig`：缺失的关键环境变量。
 - `runtime.checks`：每个关键配置项的检查结果。
 
-前端 `链接 / 频道` 页面顶部已显示 `AI Runtime` 状态卡片，用于直接查看当前 provider、状态、缺失配置和能力列表。
+前端 `AI 引擎` 页面显示当前引擎和 COCO / HMS / OpenClaw 卡槽；`链接 / 频道` 页面显示当前 AI 引擎状态。
 
 真实切换验收：
 
@@ -285,7 +289,7 @@ AGENTIC_HXA_BASE_URL=http://127.0.0.1:4800
 
 验收记录：
 
-- 本地：`openai-direct` 状态检查可识别为 `active`，但当前 shell 中的 API Key 请求返回 `INVALID_API_KEY`；默认 `zylos` 状态检查可正确指出缺失 `AGENTIC_HXA_RUNTIME_ENABLED` 和 `AGENTIC_HXA_TOKEN`。
+- 本地：默认 `none` 状态检查返回 `not_configured` 和 `AI_ENGINE`，产品端保持可用；`openai-direct` 状态检查可识别为 `active`，但当前 shell 中的 API Key 请求返回 `INVALID_API_KEY`。
 - 服务器：`openai-direct` 使用服务器容器环境完成真实调用，返回 `BeatyClaw openai-direct 服务器验收通过。`
 - 服务器：默认 `zylos` 使用 hxa/zylos-main 完成真实调用，返回 `BeatyClaw zylos 回归验收通过`。
 
@@ -564,7 +568,7 @@ BeatyClaw 数字员工已经不是原版 Hermes Web UI demo，而是一个正在
 
 - UI 工作台已经可用。
 - 微信真实闭环已经跑通。
-- hxa / zylos-main / worker-bot / GPT-5.5 的主链路已经接入。
+- 产品端已从 hxa / zylos-main / worker-bot / GPT-5.5 中解耦，默认以 `none` AI 引擎卡槽模式运行。
 - Telegram runtime 已完成到等待真实 Token 的阶段。
 - 飞书和其他平台保留配置入口，后续按优先级接 runtime。
 

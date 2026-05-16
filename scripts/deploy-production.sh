@@ -57,6 +57,18 @@ write_env_with_port() {
   fi
 }
 
+set_env_value() {
+  local target_file="$1"
+  local key="$2"
+  local value="$3"
+  if grep -q "^${key}=" "$target_file"; then
+    sed -i.bak "s/^${key}=.*/${key}=${value}/" "$target_file"
+    rm -f "${target_file}.bak"
+  else
+    printf '%s=%s\n' "$key" "$value" >> "$target_file"
+  fi
+}
+
 curl_public_health() {
   local target_port="$1"
   curl -fsS "http://127.0.0.1:${target_port}/api/auth/status" >/dev/null
@@ -65,6 +77,7 @@ curl_public_health() {
 curl_authenticated_checks() {
   local target_port="$1"
   local include_connectors="${2:-1}"
+  local expected_provider="${BEATYCLAW_DEPLOY_EXPECTED_RUNTIME_PROVIDER:-}"
   if [[ -z "${AGENTIC_DEPLOY_VERIFY_EMAIL:-}" || -z "${AGENTIC_DEPLOY_VERIFY_PASSWORD:-}" ]]; then
     log "skip protected API verification: AGENTIC_DEPLOY_VERIFY_EMAIL/PASSWORD not set"
     return 0
@@ -76,12 +89,20 @@ curl_authenticated_checks() {
     -d "{\"email\":\"${AGENTIC_DEPLOY_VERIFY_EMAIL}\",\"password\":\"${AGENTIC_DEPLOY_VERIFY_PASSWORD}\"}" \
     "http://127.0.0.1:${target_port}/api/yoyoo/auth/login" >/dev/null
 
-  curl -fsS -b "$cookie_file" "http://127.0.0.1:${target_port}/api/hermes/runtime/status" | grep -q '"available":true'
-  curl -fsS -b "$cookie_file" "http://127.0.0.1:${target_port}/api/agentic/hxa/overview" | grep -q '"online":true'
+  local runtime_json
+  runtime_json="$(curl -fsS -b "$cookie_file" "http://127.0.0.1:${target_port}/api/hermes/runtime/status")"
+  if [[ -n "$expected_provider" ]]; then
+    printf '%s' "$runtime_json" | grep -q "\"provider\":\"${expected_provider}\""
+  fi
 
   if [[ "$include_connectors" == "1" ]]; then
-    curl -fsS -b "$cookie_file" "http://127.0.0.1:${target_port}/api/hermes/weixin/status" | grep -q '"running":true'
-    curl -fsS -b "$cookie_file" "http://127.0.0.1:${target_port}/api/hermes/sessions/conversations?limit=20" | grep -q 'channel:weixin'
+    if printf '%s' "$runtime_json" | grep -q '"provider":"zylos"'; then
+      curl -fsS -b "$cookie_file" "http://127.0.0.1:${target_port}/api/agentic/hxa/overview" | grep -q '"online":true'
+    fi
+    if [[ "${BEATYCLAW_DEPLOY_VERIFY_CONNECTORS:-0}" == "1" ]]; then
+      curl -fsS -b "$cookie_file" "http://127.0.0.1:${target_port}/api/hermes/weixin/status" | grep -q '"running":true'
+      curl -fsS -b "$cookie_file" "http://127.0.0.1:${target_port}/api/hermes/sessions/conversations?limit=20" | grep -q 'channel:weixin'
+    fi
   fi
 }
 
@@ -119,6 +140,9 @@ log "build image: ${image_tag} from ${commit}"
 docker build -t "$image_tag" "$BUILD_DIR"
 
 container_env > "$env_file"
+if [[ -n "${BEATYCLAW_RUNTIME_PROVIDER:-}" ]]; then
+  set_env_value "$env_file" "BEATYCLAW_RUNTIME_PROVIDER" "$BEATYCLAW_RUNTIME_PROVIDER"
+fi
 if [[ -z "$PORT" ]]; then
   PORT="$(env_value PORT)"
 fi

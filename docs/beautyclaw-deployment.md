@@ -1,6 +1,6 @@
 # BeatyClaw Deployment Handoff
 
-This file records the production wiring needed to run BeatyClaw as a product layer in front of an AI runtime. Do not commit real tokens or passwords.
+This file records the production wiring needed to run BeatyClaw as an independent product layer with pluggable AI engines. Do not commit real tokens or passwords.
 
 ## Production Shape
 
@@ -13,12 +13,15 @@ Conversation Hub
 ↓
 Runtime SDK
 ↓
-zylos provider
-↓
-hxa-connect / zylos-main / worker-bot / GPT-5.5
+AI engine slot
+├─ none: product shell only
+├─ zylos: hxa-connect / zylos-main / worker-bot / GPT-5.5
+├─ hms: planned adapter
+├─ openclaw: planned adapter
+└─ coco: planned product/runtime package
 ```
 
-External channels, such as Weixin, enter through the same Conversation Hub and are written into the product conversation history before the message is sent to the runtime.
+External channels, such as Weixin, enter through the same Conversation Hub and are written into the product conversation history. When no AI engine is installed, BeatyClaw stores the message and returns a clear "install an AI engine" reply instead of calling zylos.
 
 ## Required Environment
 
@@ -26,8 +29,8 @@ External channels, such as Weixin, enter through the same Conversation Hub and a
 | --- | --- |
 | `AGENTIC_OWNER_EMAIL` | Single owner login email. |
 | `AGENTIC_OWNER_PASSWORD` | Single owner login password. |
-| `BEATYCLAW_RUNTIME_PROVIDER` | Runtime provider for this deployment. Current production value is `zylos`. |
-| `AGENTIC_HXA_RUNTIME_ENABLED` | Set to `1` when BeatyClaw should call hxa-connect through the zylos adapter. |
+| `BEATYCLAW_RUNTIME_PROVIDER` | Runtime provider for this deployment. Product-shell default is `none`; set to `zylos` only when installing the zylos engine. |
+| `AGENTIC_HXA_RUNTIME_ENABLED` | Set to `1` only when BeatyClaw should call hxa-connect through the zylos adapter. |
 | `AGENTIC_HXA_BASE_URL` | Internal hxa-connect URL, for example `http://127.0.0.1:4800` on the host or service DNS in compose. |
 | `AGENTIC_HXA_TOKEN` | hxa-connect bot/client token allowed to call `/api/send`. This is not the admin secret. |
 | `AGENTIC_HXA_MAIN_BOT` | Main bot target. Current production target is `zylos-main`. |
@@ -55,16 +58,21 @@ Local compose defaults to port `6060`. The current `agent.aibosss.com` productio
 ```bash
 PORT="${PORT:-6060}"
 curl -fsS "http://127.0.0.1:${PORT}/api/hermes/runtime/status"
+```
+
+Expected product-shell result:
+
+- Runtime provider is `none`.
+- Runtime status is `not_configured`.
+- `missingConfig` contains `AI_ENGINE`.
+- Login and product pages remain available.
+
+When a zylos engine is installed, additional checks should verify:
+
+```bash
 curl -fsS "http://127.0.0.1:${PORT}/api/hermes/weixin/status"
 curl -fsS "http://127.0.0.1:${PORT}/api/agentic/hxa/overview"
 ```
-
-Expected result:
-
-- Runtime provider is `zylos`.
-- Runtime status is available/active.
-- Weixin is configured and the runtime is running.
-- hxa-connect overview is online when admin overview credentials are configured.
 
 ## Conversation Verification
 
@@ -102,6 +110,7 @@ git pull
 chmod +x scripts/deploy-production.sh
 AGENTIC_DEPLOY_VERIFY_EMAIL="<owner-email>" \
 AGENTIC_DEPLOY_VERIFY_PASSWORD="<owner-password>" \
+BEATYCLAW_DEPLOY_EXPECTED_RUNTIME_PROVIDER="none" \
 scripts/deploy-production.sh
 ```
 
@@ -110,9 +119,9 @@ The script:
 1. Pulls the latest `main` branch from GitHub.
 2. Builds the image on the production server architecture.
 3. Starts a candidate container on `PORT + 1` with external channel pollers disabled.
-4. Verifies public health and, when credentials are provided, Runtime / HXA on the candidate.
+4. Verifies public health and, when credentials are provided, Runtime status on the candidate.
 5. Stops the old production container only after the candidate passes.
-6. Starts the new production container, then verifies Runtime / Weixin / HXA / default Weixin history.
+6. Starts the new production container, then verifies Runtime status. HXA/Weixin checks are opt-in with `BEATYCLAW_DEPLOY_VERIFY_CONNECTORS=1`.
 7. Keeps the previous container for rollback.
 
 Rollback, if needed:
@@ -126,6 +135,7 @@ docker start agentic
 ## Current Known Boundary
 
 - BeatyClaw is the product layer. It owns login, UI, channel status, conversation history, and the Runtime SDK boundary.
-- Zylos/hxa-connect/worker-bot are the AI runtime layer. They can be replaced later by OpenClaw or HMS through new Runtime SDK adapters.
+- Zylos/hxa-connect/worker-bot are no longer required for the product shell. They become one installable AI engine package.
+- OpenClaw, HMS, and COCO are represented as AI engine slots until their adapters/installers are implemented.
 - Telegram has a product configuration entry and runtime path, but production validation depends on a real Bot Token.
 - Feishu currently has configuration storage only; full runtime binding is a later phase.
