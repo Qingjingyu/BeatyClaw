@@ -25,6 +25,7 @@ import { setChatRunServer } from './routes/hermes/chat-run'
 import { GroupChatServer } from './services/hermes/group-chat'
 import { ChatRunSocket } from './services/hermes/chat-run-socket'
 import { logger } from './services/logger'
+import { getConfiguredRuntimeProvider } from './services/agentic/runtime-sdk'
 
 // Injected by esbuild at build time; fallback to reading package.json in dev mode
 declare const __APP_VERSION__: string
@@ -160,8 +161,12 @@ export async function bootstrap() {
   chatRunServer = new ChatRunSocket(groupChatServer.getIO(), getGatewayManagerInstance())
   setChatRunServer(chatRunServer)
   chatRunServer.init()
-  const { startZylosMainRuntime } = await import('./services/agentic/hxa-main-runtime')
-  await startZylosMainRuntime()
+  if (getConfiguredRuntimeProvider() === 'zylos') {
+    const { startZylosMainRuntime } = await import('./services/agentic/hxa-main-runtime')
+    await startZylosMainRuntime()
+  } else {
+    console.log('[bootstrap] zylos-main runtime skipped; configured provider=%s', getConfiguredRuntimeProvider())
+  }
   const { getWeixinRuntimeStatus, startWeixinRuntime } = await import('./services/agentic/weixin-runtime')
   startWeixinRuntime()
   console.log('[bootstrap] weixin runtime status:', JSON.stringify(getWeixinRuntimeStatus()))

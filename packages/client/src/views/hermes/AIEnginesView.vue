@@ -11,6 +11,7 @@ const currentRuntime = computed(() => runtimeStatus.value?.runtime || null)
 const runtimeName = computed(() => {
   const provider = currentRuntime.value?.provider || runtimeStatus.value?.provider
   if (!provider) return '未知'
+  if (provider === 'none') return '未安装'
   if (provider === 'zylos') return 'Zylos'
   if (provider === 'openai-direct') return 'OpenAI Direct'
   if (provider === 'openclaw') return 'OpenClaw'
@@ -21,6 +22,7 @@ const runtimeState = computed(() => {
   if (loading.value) return { label: '检查中', type: 'default' as const, detail: '正在读取当前 AI 能力端' }
   if (error.value) return { label: '读取失败', type: 'error' as const, detail: error.value }
   if (!currentRuntime.value) return { label: '未知', type: 'default' as const, detail: '尚未读取运行状态' }
+  if (currentRuntime.value.provider === 'none') return { label: '未安装', type: 'default' as const, detail: currentRuntime.value.detail || '当前还没有安装 AI 引擎' }
   if (!currentRuntime.value.available) return { label: '未可用', type: 'warning' as const, detail: currentRuntime.value.detail || '当前运行时缺少必要配置' }
   return { label: '运行中', type: 'success' as const, detail: currentRuntime.value.detail || '当前运行时可用' }
 })
@@ -30,25 +32,25 @@ const engines = [
   {
     key: 'coco',
     name: 'COCO',
-    badge: '产品层参考',
-    status: '待接入',
-    description: '账号、支付、使用指南、案例和连接流程的产品参考源。',
-    role: 'SaaS 产品能力',
+    badge: '产品能力包',
+    status: '可安装',
+    description: '提供账号、支付、使用指南、案例和连接流程等产品能力。',
+    role: 'COCO 产品层',
   },
   {
     key: 'hms',
     name: 'HMS',
     badge: 'AI 能力端',
-    status: '待接入',
-    description: '计划作为可替换的 AI Runtime，通过统一接口接入 BeatyClaw。',
+    status: '可安装',
+    description: '作为本地或服务器 AI Runtime，通过统一接口接入 BeatyClaw。',
     role: 'Hermes / HMS Runtime',
   },
   {
     key: 'openclaw',
     name: 'OpenClaw',
     badge: 'AI 能力端',
-    status: '待接入',
-    description: '计划通过 Runtime SDK adapter 接入，承接多 Agent 和执行能力。',
+    status: '可安装',
+    description: '通过 Runtime SDK adapter 接入，承接多 Agent 和执行能力。',
     role: 'OpenClaw Runtime',
   },
 ]
@@ -73,7 +75,7 @@ onMounted(loadRuntimeStatus)
     <header class="page-header">
       <div>
         <h2>AI 引擎</h2>
-        <p>统一管理 BeatyClaw 可对接的底层 AI 能力端。</p>
+        <p>统一管理 BeatyClaw 可安装、可接入的底层 AI 能力端。</p>
       </div>
       <NButton size="small" :loading="loading" @click="loadRuntimeStatus">刷新</NButton>
     </header>
@@ -81,7 +83,7 @@ onMounted(loadRuntimeStatus)
     <main class="ai-engines-content">
       <section class="runtime-panel">
         <div class="runtime-main">
-          <span class="section-label">当前生产运行时</span>
+          <span class="section-label">当前 AI 引擎</span>
           <div class="runtime-title">
             <h3>{{ runtimeName }}</h3>
             <NTag :type="runtimeState.type" size="small" round>{{ runtimeState.label }}</NTag>

@@ -16,11 +16,17 @@ describe('BeatyClaw runtime SDK', () => {
     vi.unstubAllGlobals()
   })
 
-  it('uses zylos as the deployment default runtime provider', () => {
+  it('uses none as the product-shell default runtime provider', () => {
     process.env = { ...originalEnv, BEATYCLAW_RUNTIME_PROVIDER: '' }
 
-    expect(getConfiguredRuntimeProvider()).toBe('zylos')
-    expect(createConfiguredRuntimeAdapter().provider).toBe('zylos')
+    expect(getConfiguredRuntimeProvider()).toBe('none')
+    expect(createConfiguredRuntimeAdapter().provider).toBe('none')
+    expect(getConfiguredRuntimeStatus()).toMatchObject({
+      provider: 'none',
+      available: false,
+      mode: 'not_configured',
+      missingConfig: ['AI_ENGINE'],
+    })
   })
 
   it('reads the deployment runtime provider from BEATYCLAW_RUNTIME_PROVIDER', () => {
@@ -78,6 +84,18 @@ describe('BeatyClaw runtime SDK', () => {
       mode: 'unsupported',
     })
     await expect(runtime.sendMessage({ text: 'hello' })).rejects.toThrow('openclaw runtime adapter is not implemented yet')
+  })
+
+  it('keeps the product shell online when no AI engine is installed', async () => {
+    const runtime = createRuntimeAdapter('none')
+
+    expect(runtime.getStatus()).toMatchObject({
+      provider: 'none',
+      available: false,
+      mode: 'not_configured',
+      missingConfig: ['AI_ENGINE'],
+    })
+    await expect(runtime.sendMessage({ text: 'hello' })).rejects.toThrow('No AI engine is installed')
   })
 
   it('calls an OpenAI-compatible API through the openai-direct provider', async () => {

@@ -94,9 +94,35 @@ describe('ChannelsView runtime status', () => {
     const wrapper = mount(ChannelsView)
     await flushPromises()
 
-    expect(wrapper.text()).toContain('AI Runtime')
+    expect(wrapper.text()).toContain('AI 引擎状态')
     expect(wrapper.text()).toContain('openai-direct')
     expect(wrapper.text()).toContain('未配置')
     expect(wrapper.text()).toContain('OPENAI_API_KEY')
+  })
+
+  it('treats hxa as hidden engine internals when no AI engine is installed', async () => {
+    mockFetchRuntimeStatus.mockResolvedValue({
+      provider: 'none',
+      runtime: {
+        provider: 'none',
+        available: false,
+        mode: 'not_configured',
+        detail: 'BeatyClaw is running as a product shell. No AI engine is installed yet.',
+        missingConfig: ['AI_ENGINE'],
+        checks: [
+          { key: 'AI_ENGINE', label: 'AI 引擎', ok: false, required: true },
+        ],
+      },
+    })
+    mockFetchHxaOverview.mockRejectedValue(new Error('hxa stopped'))
+
+    const wrapper = mount(ChannelsView)
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('AI 引擎状态')
+    expect(wrapper.text()).toContain('none')
+    expect(wrapper.text()).toContain('未安装')
+    expect(wrapper.text()).not.toContain('hxa-connect')
+    expect(wrapper.text()).not.toContain('hxa stopped')
   })
 })

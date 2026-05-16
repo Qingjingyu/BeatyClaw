@@ -57,12 +57,13 @@ const latestConnectorActivity = computed(() => {
   ].filter(item => item.at)
   return candidates.sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime())[0]
 })
-const hasConnectorError = computed(() => Boolean(weixinRuntime.value?.last_error || telegramRuntime.value?.last_error || hxaError.value))
+const hasConnectorError = computed(() => Boolean(weixinRuntime.value?.last_error || telegramRuntime.value?.last_error || (runtime.value?.provider === 'zylos' && hxaError.value)))
 const runtime = computed(() => runtimeStatus.value?.runtime || null)
 const runtimeState = computed(() => {
   if (runtimeLoading.value) return { label: '检查中', tone: 'default' as const, caption: '正在读取部署 Runtime 状态' }
   if (runtimeError.value) return { label: '读取失败', tone: 'error' as const, caption: runtimeError.value }
   if (!runtime.value) return { label: '未知', tone: 'default' as const, caption: '尚未读取 Runtime 状态' }
+  if (runtime.value.provider === 'none') return { label: '未安装', tone: 'default' as const, caption: runtime.value.detail || '当前产品端未安装 AI 引擎' }
   if (runtime.value.mode === 'unsupported') return { label: '未支持', tone: 'error' as const, caption: runtime.value.detail || '当前 provider 尚未实现 adapter' }
   if (!runtime.value.available) return { label: '未配置', tone: 'warning' as const, caption: runtime.value.detail || '缺少必要部署配置' }
   return { label: '已连接', tone: 'success' as const, caption: runtime.value.detail || '当前 Runtime 可用' }
@@ -77,7 +78,7 @@ const runtimeCapabilityText = computed(() => {
 })
 const overallState = computed(() => {
   if (!connectedCount.value) return { label: '未连接', tone: 'default' as const, caption: '还没有可用外部入口' }
-  if (runtime.value && !runtime.value.available) return { label: '部分异常', tone: 'warning' as const, caption: 'AI Runtime 当前不可用' }
+  if (runtime.value && !runtime.value.available && runtime.value.provider !== 'none') return { label: '部分异常', tone: 'warning' as const, caption: 'AI Runtime 当前不可用' }
   if (hxaOverview.value && !hxaOverview.value.online && runtime.value?.provider === 'zylos') return { label: '部分异常', tone: 'warning' as const, caption: 'hxa-connect 当前不可用' }
   if (hasConnectorError.value) return { label: '需要处理', tone: 'warning' as const, caption: '存在运行错误，查看下方细分卡片' }
   if (runningCount.value > 0) return { label: '整体正常', tone: 'success' as const, caption: '已连接渠道正在运行' }
@@ -89,7 +90,7 @@ const latestActivity = computed(() => {
 })
 const issueSummary = computed(() => {
   const issues: string[] = []
-  if (hxaError.value) issues.push('hxa-connect 状态读取异常')
+  if (runtime.value?.provider === 'zylos' && hxaError.value) issues.push('hxa-connect 状态读取异常')
   if (weixinStatus.value?.configured && !weixinRuntime.value?.running) issues.push('微信已配置，但 runtime 未运行')
   if (weixinRuntime.value?.last_error) issues.push(`微信最近错误：${weixinRuntime.value.last_error}`)
   if (telegramStatus.value?.configured && !telegramRuntime.value?.running) issues.push('Telegram 已配置，但 runtime 未运行')
@@ -102,8 +103,8 @@ const chainNodes = computed(() => [
   { label: '外部入口', state: (weixinRuntime.value?.running || telegramRuntime.value?.running) ? 'ok' : (connectedCount.value ? 'warn' : 'idle') },
   { label: 'Agentic', state: 'ok' },
   { label: 'Runtime SDK', state: runtime.value?.available ? 'ok' : 'warn' },
-  { label: runtime.value?.provider || 'AI Runtime', state: runtime.value?.available ? 'ok' : 'warn' },
-  { label: runtime.value?.provider === 'zylos' ? 'worker-bot' : '模型 API', state: runtime.value?.available ? 'ok' : 'warn' },
+  { label: runtime.value?.provider === 'none' ? 'AI 引擎卡槽' : (runtime.value?.provider || 'AI Runtime'), state: runtime.value?.available ? 'ok' : (runtime.value?.provider === 'none' ? 'idle' : 'warn') },
+  { label: runtime.value?.provider === 'zylos' ? 'worker-bot' : (runtime.value?.provider === 'none' ? '待安装' : '模型 API'), state: runtime.value?.available ? 'ok' : (runtime.value?.provider === 'none' ? 'idle' : 'warn') },
 ])
 const connectors = computed(() => [
   {
@@ -426,8 +427,8 @@ onUnmounted(() => {
       <section class="runtime-panel">
         <div class="section-heading">
           <div>
-            <h3>AI Runtime</h3>
-            <p>当前部署接入的底层 AI 能力，不由终端用户手动切换。</p>
+            <h3>AI 引擎状态</h3>
+            <p>产品端只保留统一接入口；底层能力由 AI 引擎页面安装后接入。</p>
           </div>
           <NTag :type="runtimeState.tone" round>
             {{ runtimeState.label }}
@@ -472,7 +473,7 @@ onUnmounted(() => {
         </NSpin>
       </section>
 
-      <section class="hxa-panel">
+      <section v-if="runtime?.provider === 'zylos'" class="hxa-panel">
         <div class="section-heading">
           <div>
             <h3>hxa-connect</h3>

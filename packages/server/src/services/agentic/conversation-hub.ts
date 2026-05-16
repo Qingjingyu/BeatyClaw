@@ -70,6 +70,7 @@ const CHANNEL_LABELS: Record<ConversationHubMessageInput['channel'], string> = {
 
 const DEFAULT_REPLY = '我收到消息了，但当前没有生成有效回复。'
 const RUNTIME_ERROR_REPLY = '我收到消息了，但当前 AI 能力端暂时不可用，请稍后再试。'
+const NO_RUNTIME_REPLY = '我收到消息了，但当前还没有安装 AI 引擎。请先在 AI 引擎页面安装 HMS、COCO 或 OpenClaw。'
 
 const defaultDeps: ConversationHubDeps = {
   getSession,
@@ -159,6 +160,9 @@ export function createConversationHub(deps: Partial<ConversationHubDeps> = {}) {
       }
 
       try {
+        if (runtimeProvider === 'none') {
+          throw new Error('No AI engine is installed.')
+        }
         const runtime: BeatyClawRuntime = d.createRuntimeAdapter(runtimeProvider)
         runtimeResult = await runtime.sendMessage({
           userId: input.externalUserId,
@@ -181,7 +185,7 @@ export function createConversationHub(deps: Partial<ConversationHubDeps> = {}) {
         }
       } catch (err) {
         d.logger.warn({ err, channel: input.channel, sessionId }, '[conversation-hub] runtime message failed')
-        replyText = RUNTIME_ERROR_REPLY
+        replyText = runtimeProvider === 'none' ? NO_RUNTIME_REPLY : RUNTIME_ERROR_REPLY
         trace = {
           channel: input.channel,
           runtimeProvider,

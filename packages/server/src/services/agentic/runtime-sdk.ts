@@ -1,7 +1,7 @@
 import type { ContentBlock } from '../hermes/chat-run-socket'
 import { createHxaMainAgentRun, type HxaMainAgentRun } from './runtime'
 
-export type BeatyClawRuntimeProvider = 'zylos' | 'openai-direct' | 'openclaw' | 'hms'
+export type BeatyClawRuntimeProvider = 'none' | 'zylos' | 'openai-direct' | 'openclaw' | 'hms'
 
 export interface RuntimeMessageInput {
   userId?: string
@@ -52,7 +52,7 @@ export interface OpenAiDirectRuntimeAdapterOptions {
   fetchImpl?: typeof fetch
 }
 
-const DEFAULT_RUNTIME_PROVIDER: BeatyClawRuntimeProvider = 'zylos'
+const DEFAULT_RUNTIME_PROVIDER: BeatyClawRuntimeProvider = 'none'
 const DEFAULT_OPENAI_MODEL = 'gpt-5.5'
 
 function normalizeOpenAIBaseUrl(value: string): string {
@@ -70,7 +70,7 @@ function contentToText(input: string | ContentBlock[]): string {
 
 function parseRuntimeProvider(value: string | undefined): BeatyClawRuntimeProvider {
   const provider = (value || '').trim().toLowerCase()
-  if (provider === 'openai-direct' || provider === 'zylos' || provider === 'openclaw' || provider === 'hms') {
+  if (provider === 'none' || provider === 'openai-direct' || provider === 'zylos' || provider === 'openclaw' || provider === 'hms') {
     return provider
   }
   return DEFAULT_RUNTIME_PROVIDER
@@ -219,6 +219,7 @@ export function createOpenAiDirectRuntimeAdapter(options: OpenAiDirectRuntimeAda
 }
 
 export function createRuntimeAdapter(provider: BeatyClawRuntimeProvider): BeatyClawRuntime {
+  if (provider === 'none') return createNoneRuntimeAdapter()
   if (provider === 'zylos') return createZylosRuntimeAdapter()
   if (provider === 'openai-direct') return createOpenAiDirectRuntimeAdapter()
   return createUnsupportedRuntimeAdapter(provider)
@@ -232,7 +233,37 @@ export function getConfiguredRuntimeStatus(): RuntimeStatus {
   return createConfiguredRuntimeAdapter().getStatus()
 }
 
-function createUnsupportedRuntimeAdapter(provider: Exclude<BeatyClawRuntimeProvider, 'zylos' | 'openai-direct'>): BeatyClawRuntime {
+function createNoneRuntimeAdapter(): BeatyClawRuntime {
+  return {
+    provider: 'none',
+
+    async sendMessage(): Promise<RuntimeMessageResult> {
+      throw new Error('No AI engine is installed. Install HMS, COCO, or OpenClaw before sending messages to an AI runtime.')
+    },
+
+    getStatus(): RuntimeStatus {
+      return {
+        provider: 'none',
+        available: false,
+        mode: 'not_configured',
+        detail: 'BeatyClaw is running as a product shell. No AI engine is installed yet.',
+        capabilities: [],
+        missingConfig: ['AI_ENGINE'],
+        checks: [
+          {
+            key: 'AI_ENGINE',
+            label: 'AI 引擎',
+            ok: false,
+            required: true,
+            detail: '尚未安装 HMS、COCO 或 OpenClaw。',
+          },
+        ],
+      }
+    },
+  }
+}
+
+function createUnsupportedRuntimeAdapter(provider: Exclude<BeatyClawRuntimeProvider, 'none' | 'zylos' | 'openai-direct'>): BeatyClawRuntime {
   return {
     provider,
 

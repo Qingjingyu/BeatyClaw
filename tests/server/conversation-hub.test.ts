@@ -10,6 +10,7 @@ describe('Conversation Hub', () => {
   })
 
   it('stores channel user and assistant messages in a stable product session before returning channel reply', async () => {
+    process.env = { ...originalEnv, BEATYCLAW_RUNTIME_PROVIDER: 'zylos' }
     const sessions = new Map<string, any>()
     const messages: any[] = []
     const usage: any[] = []
@@ -94,6 +95,7 @@ describe('Conversation Hub', () => {
   })
 
   it('reuses the same product session for the same channel user', async () => {
+    process.env = { ...originalEnv, BEATYCLAW_RUNTIME_PROVIDER: 'zylos' }
     const sessions = new Map<string, any>()
     const messages: any[] = []
     const hub = createConversationHub({
@@ -166,7 +168,41 @@ describe('Conversation Hub', () => {
     expect(result.replyText).toBe('direct reply')
   })
 
+  it('stores inbound messages but does not call a runtime when no AI engine is installed', async () => {
+    process.env = { ...originalEnv, BEATYCLAW_RUNTIME_PROVIDER: 'none' }
+    const messages: any[] = []
+    const createRuntimeAdapter = vi.fn()
+
+    const hub = createConversationHub({
+      getSession: () => null,
+      createSession: (data) => data as any,
+      addMessage: (message) => {
+        messages.push(message)
+        return messages.length
+      },
+      updateSessionStats: vi.fn(),
+      updateUsage: vi.fn(),
+      createRuntimeAdapter,
+      countTokens: (text) => String(text).length,
+      nowSeconds: () => 1778933000,
+      logger: { warn: vi.fn() },
+    })
+
+    const result = await hub.receiveMessage({ channel: 'web', externalUserId: 'web-user-1', text: '你好' })
+
+    expect(createRuntimeAdapter).not.toHaveBeenCalled()
+    expect(result.runtimeProvider).toBe('none')
+    expect(result.replyText).toBe('我收到消息了，但当前还没有安装 AI 引擎。请先在 AI 引擎页面安装 HMS、COCO 或 OpenClaw。')
+    expect(JSON.parse(messages[1].reasoning_details)).toMatchObject({
+      channel: 'web',
+      runtime_provider: 'none',
+      status: 'failed',
+      error: 'No AI engine is installed.',
+    })
+  })
+
   it('lets Web chat enter the unified product session and records reply trace metadata', async () => {
+    process.env = { ...originalEnv, BEATYCLAW_RUNTIME_PROVIDER: 'zylos' }
     const sessions = new Map<string, any>()
     const messages: any[] = []
 

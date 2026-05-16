@@ -1,6 +1,6 @@
 import { request } from '../client'
 
-export type RuntimeProvider = 'zylos' | 'openai-direct' | 'openclaw' | 'hms'
+export type RuntimeProvider = 'none' | 'zylos' | 'openai-direct' | 'openclaw' | 'hms'
 export type RuntimeMode = 'active' | 'not_configured' | 'unsupported'
 
 export interface RuntimeCheck {
