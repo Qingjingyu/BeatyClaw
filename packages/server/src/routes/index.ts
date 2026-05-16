@@ -24,6 +24,7 @@ import { copilotAuthRoutes } from './hermes/copilot-auth'
 import { gatewayRoutes } from './hermes/gateways'
 import { weixinRoutes } from './hermes/weixin'
 import { telegramRoutes } from './hermes/telegram'
+import { runtimeRoutes } from './hermes/runtime'
 import { fileRoutes } from './hermes/files'
 import { downloadRoutes } from './hermes/download'
 import { jobRoutes } from './hermes/jobs'
@@ -68,6 +69,7 @@ export function registerRoutes(app: any, requireAuth: (ctx: Context, next: Next)
   app.use(gatewayRoutes.routes())
   app.use(weixinRoutes.routes())
   app.use(telegramRoutes.routes())
+  app.use(runtimeRoutes.routes())
   app.use(groupChatRoutes.routes())       // Must be before proxy
   app.use(fileRoutes.routes())              // Must be before proxy (proxy catch-all matches everything)
   app.use(downloadRoutes.routes())          // Must be before proxy
