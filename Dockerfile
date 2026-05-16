@@ -40,4 +40,3 @@ EXPOSE 6060
 # 强制覆盖基础镜像的默认启动脚本，让镜像本身具备独立运行的能力
 ENTRYPOINT ["node"]
 CMD ["dist/server/index.js"]
-CMD []
