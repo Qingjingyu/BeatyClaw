@@ -130,4 +130,23 @@ describe('BeatyClaw runtime SDK', () => {
       mode: 'active',
     })
   })
+
+  it('explains missing openai-direct deployment configuration', () => {
+    process.env = {
+      ...originalEnv,
+      BEATYCLAW_RUNTIME_PROVIDER: 'openai-direct',
+      OPENAI_API_KEY: '',
+    }
+
+    expect(getConfiguredRuntimeStatus()).toMatchObject({
+      provider: 'openai-direct',
+      available: false,
+      mode: 'not_configured',
+      missingConfig: ['OPENAI_API_KEY'],
+      checks: [
+        { key: 'OPENAI_API_KEY', label: 'OpenAI API Key', ok: false, required: true },
+        { key: 'OPENAI_BASE_URL', label: 'OpenAI Base URL', ok: true, required: false },
+      ],
+    })
+  })
 })

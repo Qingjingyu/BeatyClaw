@@ -26,6 +26,14 @@ export interface RuntimeStatus {
   mode: 'active' | 'not_configured' | 'unsupported'
   detail?: string
   capabilities?: string[]
+  missingConfig?: string[]
+  checks?: Array<{
+    key: string
+    label: string
+    ok: boolean
+    required: boolean
+    detail?: string
+  }>
 }
 
 export interface BeatyClawRuntime {
@@ -91,12 +99,43 @@ export function createZylosRuntimeAdapter(options: ZylosRuntimeAdapterOptions = 
     },
 
     getStatus(): RuntimeStatus {
+      const enabled = process.env.AGENTIC_HXA_RUNTIME_ENABLED === '1'
+      const hasToken = Boolean(process.env.AGENTIC_HXA_TOKEN?.trim())
+      const baseUrl = process.env.AGENTIC_HXA_BASE_URL || process.env.HXA_CONNECT_BASE_URL || 'http://127.0.0.1:4800'
+      const checks = [
+        {
+          key: 'AGENTIC_HXA_RUNTIME_ENABLED',
+          label: 'HXA Runtime 开关',
+          ok: enabled,
+          required: true,
+          detail: enabled ? '已开启' : '需要设置为 1',
+        },
+        {
+          key: 'AGENTIC_HXA_TOKEN',
+          label: 'HXA Runtime Token',
+          ok: hasToken,
+          required: true,
+          detail: hasToken ? '已配置' : '需要配置 hxa-connect token',
+        },
+        {
+          key: 'AGENTIC_HXA_BASE_URL',
+          label: 'HXA Base URL',
+          ok: Boolean(baseUrl),
+          required: false,
+          detail: baseUrl,
+        },
+      ]
+      const missingConfig = checks.filter(check => check.required && !check.ok).map(check => check.key)
       return {
         provider: 'zylos',
-        available: true,
-        mode: 'active',
-        detail: 'Zylos runtime uses the current hxa-connect main agent path.',
+        available: missingConfig.length === 0,
+        mode: missingConfig.length === 0 ? 'active' : 'not_configured',
+        detail: missingConfig.length === 0
+          ? 'Zylos runtime uses the current hxa-connect main agent path.'
+          : 'Zylos runtime requires HXA runtime env before it can handle messages.',
         capabilities: ['chat', 'channel-reply'],
+        missingConfig,
+        checks,
       }
     },
   }
@@ -143,15 +182,35 @@ export function createOpenAiDirectRuntimeAdapter(options: OpenAiDirectRuntimeAda
     },
 
     getStatus(): RuntimeStatus {
-      const available = Boolean(process.env.OPENAI_API_KEY?.trim())
+      const hasApiKey = Boolean(process.env.OPENAI_API_KEY?.trim())
+      const baseUrl = normalizeOpenAIBaseUrl(process.env.OPENAI_BASE_URL || 'https://api.openai.com')
+      const checks = [
+        {
+          key: 'OPENAI_API_KEY',
+          label: 'OpenAI API Key',
+          ok: hasApiKey,
+          required: true,
+          detail: hasApiKey ? '已配置' : '需要配置服务端 OpenAI-compatible API Key',
+        },
+        {
+          key: 'OPENAI_BASE_URL',
+          label: 'OpenAI Base URL',
+          ok: Boolean(baseUrl),
+          required: false,
+          detail: baseUrl,
+        },
+      ]
+      const missingConfig = checks.filter(check => check.required && !check.ok).map(check => check.key)
       return {
         provider: 'openai-direct',
-        available,
-        mode: available ? 'active' : 'not_configured',
-        detail: available
+        available: missingConfig.length === 0,
+        mode: missingConfig.length === 0 ? 'active' : 'not_configured',
+        detail: missingConfig.length === 0
           ? 'OpenAI Direct runtime uses OPENAI_BASE_URL and OPENAI_API_KEY.'
           : 'OpenAI Direct runtime requires OPENAI_API_KEY.',
         capabilities: ['chat', 'channel-reply'],
+        missingConfig,
+        checks,
       }
     },
   }
@@ -186,6 +245,16 @@ function createUnsupportedRuntimeAdapter(provider: Exclude<BeatyClawRuntimeProvi
         mode: 'unsupported',
         detail: `${provider} runtime adapter is planned but not implemented in this phase.`,
         capabilities: [],
+        missingConfig: [],
+        checks: [
+          {
+            key: `${provider.toUpperCase()}_ADAPTER`,
+            label: `${provider} adapter`,
+            ok: false,
+            required: true,
+            detail: 'Adapter not implemented yet.',
+          },
+        ],
       }
     },
   }
