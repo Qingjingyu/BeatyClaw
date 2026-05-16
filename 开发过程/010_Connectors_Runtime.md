@@ -468,12 +468,14 @@ Building 已完成第一版 MVP。
 
 - 使用 iLink `getupdates` 长轮询收微信消息。
 - 使用 iLink `sendmessage` 回复微信消息。
-- 把入站消息转到现有 `createHxaMainAgentRun()`。
+- 把入站消息转到 BeatyClaw Conversation Hub，由 Hub 统一写入产品会话并调用 Runtime SDK。
 - 继续沿用现有链路：
 
 ```text
 微信
 → Agentic weixin-runtime
+→ BeatyClaw Conversation Hub
+→ Runtime SDK
 → hxa-connect / zylos-main
 → worker-bot / GPT-5.5
 → Agentic weixin-runtime
@@ -683,7 +685,7 @@ npm run build
   - 读取当前 Hermes profile `.env` 中的 `TELEGRAM_BOT_TOKEN`。
   - 使用 Telegram Bot API `getUpdates` 长轮询。
   - 首次启动只保存 offset 并跳过历史更新，避免批量回复旧消息。
-  - 新消息进入现有 `createHxaMainAgentRun()`。
+  - 新消息进入 BeatyClaw Conversation Hub，并由 Hub 通过 Runtime SDK 调用能力端。
   - 使用 Telegram `sendMessage` 回发回复。
   - 支持私聊、群聊、forum thread 的 `message_thread_id`。
   - 持久化 `telegram-runtime-state.json`。

@@ -202,7 +202,7 @@ BeatyClaw / Agentic
 - 保存 Token 后 runtime 热启动，不需要重启容器。
 - Telegram Bot API `getUpdates` 长轮询代码已接入。
 - Telegram Bot API `sendMessage` 回复代码已接入。
-- 入站消息会进入 `createHxaMainAgentRun()`。
+- 入站消息会先进入 BeatyClaw Conversation Hub，写入产品会话，再通过 Runtime SDK 调用当前 Zylos/HXA 能力端。
 - `/api/hermes/telegram/status` 已上线。
 - 频道页 Telegram 卡片接入 runtime 状态。
 - 假 Token 负向验证通过：保存后 runtime 启动，并正确显示 Telegram `401 Unauthorized`，清空后无残留。
