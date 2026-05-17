@@ -1,10 +1,16 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { NButton, NSpin, NTag } from 'naive-ui'
-import { fetchRuntimeStatus, type RuntimeStatusResponse } from '@/api/hermes/runtime'
+import {
+  fetchRuntimeDiagnostics,
+  fetchRuntimeStatus,
+  type RuntimeDiagnosticsResponse,
+  type RuntimeStatusResponse,
+} from '@/api/hermes/runtime'
 import { getEngineDisplayLabel } from '@/utils/engine-display'
 
 const runtimeStatus = ref<RuntimeStatusResponse | null>(null)
+const runtimeDiagnostics = ref<RuntimeDiagnosticsResponse | null>(null)
 const loading = ref(false)
 const error = ref('')
 
@@ -25,6 +31,22 @@ const runtimeState = computed(() => {
   return { label: '运行中', type: 'success' as const, detail: currentRuntime.value.detail || '当前运行时可用' }
 })
 const runtimeCapabilities = computed(() => currentRuntime.value?.capabilities || [])
+const diagnosticState = computed(() => {
+  const status = runtimeDiagnostics.value?.status
+  if (loading.value) return { label: '检查中', type: 'default' as const, detail: '正在检查产品端和 AI 能力链路' }
+  if (error.value) return { label: '读取失败', type: 'error' as const, detail: error.value }
+  if (status === 'ok') return { label: '全部正常', type: 'success' as const, detail: '产品端和当前 AI 能力链路可用' }
+  if (status === 'warning') return { label: '需要关注', type: 'warning' as const, detail: '主链路可用，但有配置或辅助服务需要检查' }
+  if (status === 'error') return { label: '存在异常', type: 'error' as const, detail: '至少一个关键检查失败，需要先修复' }
+  return { label: '未检查', type: 'default' as const, detail: '点击刷新读取运行自检' }
+})
+
+function diagnosticTagType(status: string) {
+  if (status === 'ok') return 'success'
+  if (status === 'warning') return 'warning'
+  if (status === 'error') return 'error'
+  return 'default'
+}
 
 const engines = [
   {
@@ -57,7 +79,12 @@ async function loadRuntimeStatus() {
   loading.value = true
   error.value = ''
   try {
-    runtimeStatus.value = await fetchRuntimeStatus()
+    const [status, diagnostics] = await Promise.all([
+      fetchRuntimeStatus(),
+      fetchRuntimeDiagnostics(),
+    ])
+    runtimeStatus.value = status
+    runtimeDiagnostics.value = diagnostics
   } catch (err) {
     error.value = err instanceof Error ? err.message : String(err)
   } finally {
@@ -102,6 +129,38 @@ onMounted(loadRuntimeStatus)
             <span>能力</span>
             <strong>{{ runtimeCapabilities.length ? runtimeCapabilities.join('、') : '暂无' }}</strong>
           </div>
+        </div>
+      </section>
+
+      <section class="diagnostics-panel">
+        <div class="diagnostics-head">
+          <div>
+            <span class="section-label">运行自检</span>
+            <h3>产品端与 AI 能力链路</h3>
+            <p>{{ diagnosticState.detail }}</p>
+          </div>
+          <NTag :type="diagnosticState.type" size="small" round>{{ diagnosticState.label }}</NTag>
+        </div>
+
+        <div class="diagnostics-list">
+          <article
+            v-for="check in runtimeDiagnostics?.checks || []"
+            :key="check.key"
+            class="diagnostic-item"
+          >
+            <div>
+              <strong>{{ check.label }}</strong>
+              <p>{{ check.detail }}</p>
+              <small v-if="check.action">{{ check.action }}</small>
+            </div>
+            <NTag :type="diagnosticTagType(check.status)" size="small" round>{{ check.status }}</NTag>
+          </article>
+          <article v-if="!runtimeDiagnostics?.checks?.length" class="diagnostic-item diagnostic-empty">
+            <div>
+              <strong>暂无自检结果</strong>
+              <p>点击刷新后会检查 Runtime、hxa-connect、zylos-main、worker-bot、模型配置和数据目录。</p>
+            </div>
+          </article>
         </div>
       </section>
 
@@ -173,6 +232,81 @@ onMounted(loadRuntimeStatus)
   border: 1px solid $border-color;
   border-radius: $radius-md;
   background: $bg-card;
+}
+
+.diagnostics-panel {
+  padding: 20px;
+  border: 1px solid $border-color;
+  border-radius: $radius-md;
+  background: $bg-card;
+}
+
+.diagnostics-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+
+  h3 {
+    margin: 0 0 6px;
+    color: $text-primary;
+    font-size: 20px;
+    font-weight: 650;
+    letter-spacing: 0;
+  }
+
+  p {
+    margin: 0;
+    color: $text-secondary;
+    font-size: 14px;
+    line-height: 1.5;
+  }
+}
+
+.diagnostics-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.diagnostic-item {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid $border-color;
+  border-radius: $radius-sm;
+  background: $bg-secondary;
+
+  strong {
+    display: block;
+    margin-bottom: 5px;
+    color: $text-primary;
+    font-size: 14px;
+    font-weight: 650;
+  }
+
+  p {
+    margin: 0;
+    color: $text-secondary;
+    font-size: 13px;
+    line-height: 1.5;
+  }
+
+  small {
+    display: block;
+    margin-top: 6px;
+    color: $text-muted;
+    font-size: 12px;
+    line-height: 1.45;
+  }
+}
+
+.diagnostic-empty {
+  grid-column: 1 / -1;
 }
 
 .section-label,
@@ -291,6 +425,7 @@ onMounted(loadRuntimeStatus)
 
 @media (max-width: 1080px) {
   .runtime-panel,
+  .diagnostics-list,
   .engine-grid {
     grid-template-columns: 1fr;
   }
@@ -306,8 +441,13 @@ onMounted(loadRuntimeStatus)
   }
 
   .runtime-panel,
+  .diagnostics-panel,
   .engine-card {
     padding: 16px;
+  }
+
+  .diagnostics-head {
+    flex-direction: column;
   }
 }
 </style>

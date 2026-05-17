@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { status } from '../../packages/server/src/controllers/hermes/runtime'
+import { diagnostics, status } from '../../packages/server/src/controllers/hermes/runtime'
 
 describe('Runtime controller', () => {
   const originalEnv = process.env
@@ -53,5 +53,25 @@ describe('Runtime controller', () => {
       ok: false,
       required: true,
     }))
+  })
+
+  it('returns runtime self-check diagnostics', async () => {
+    process.env = {
+      ...originalEnv,
+      BEATYCLAW_RUNTIME_PROVIDER: 'openai-direct',
+      OPENAI_API_KEY: 'test-key',
+    }
+    const ctx: any = {}
+
+    await diagnostics(ctx)
+
+    expect(ctx.body).toMatchObject({
+      provider: 'openai-direct',
+      status: expect.any(String),
+      checks: expect.arrayContaining([
+        expect.objectContaining({ key: 'runtime' }),
+        expect.objectContaining({ key: 'model' }),
+      ]),
+    })
   })
 })

@@ -7,7 +7,7 @@ vi.mock('../../packages/client/src/api/client', () => ({
   request: mockRequest,
 }))
 
-import { fetchRuntimeStatus } from '../../packages/client/src/api/hermes/runtime'
+import { fetchRuntimeDiagnostics, fetchRuntimeStatus } from '../../packages/client/src/api/hermes/runtime'
 
 describe('Runtime API', () => {
   beforeEach(() => {
@@ -33,5 +33,21 @@ describe('Runtime API', () => {
       },
     })
     expect(mockRequest).toHaveBeenCalledWith('/api/hermes/runtime/status')
+  })
+
+  it('fetches runtime self-check diagnostics', async () => {
+    mockRequest.mockResolvedValue({
+      provider: 'zylos',
+      status: 'ok',
+      generatedAt: '2026-05-17T10:00:00.000Z',
+      checks: [{ key: 'runtime', label: 'Runtime SDK', status: 'ok', detail: 'ok' }],
+    })
+
+    await expect(fetchRuntimeDiagnostics()).resolves.toMatchObject({
+      provider: 'zylos',
+      status: 'ok',
+      checks: [expect.objectContaining({ key: 'runtime' })],
+    })
+    expect(mockRequest).toHaveBeenCalledWith('/api/hermes/runtime/diagnostics')
   })
 })

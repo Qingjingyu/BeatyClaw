@@ -26,6 +26,27 @@ export interface RuntimeStatusResponse {
   runtime: RuntimeStatus
 }
 
+export type RuntimeDiagnosticState = 'ok' | 'warning' | 'error'
+
+export interface RuntimeDiagnosticItem {
+  key: string
+  label: string
+  status: RuntimeDiagnosticState
+  detail: string
+  action?: string
+}
+
+export interface RuntimeDiagnosticsResponse {
+  status: RuntimeDiagnosticState
+  provider: RuntimeProvider
+  generatedAt: string
+  checks: RuntimeDiagnosticItem[]
+}
+
 export async function fetchRuntimeStatus(): Promise<RuntimeStatusResponse> {
   return request<RuntimeStatusResponse>('/api/hermes/runtime/status')
+}
+
+export async function fetchRuntimeDiagnostics(): Promise<RuntimeDiagnosticsResponse> {
+  return request<RuntimeDiagnosticsResponse>('/api/hermes/runtime/diagnostics')
 }
