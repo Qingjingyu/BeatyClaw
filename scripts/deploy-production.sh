@@ -147,7 +147,11 @@ for deploy_env_key in \
   BEATYCLAW_HMS_HOST \
   BEATYCLAW_HMS_HEALTH_URL \
   BEATYCLAW_HMS_START_COMMAND \
-  BEATYCLAW_HMS_START_ARGS
+  BEATYCLAW_HMS_START_ARGS \
+  BEATYCLAW_HMS_MODEL \
+  BEATYCLAW_HMS_MODEL_PROVIDER \
+  BEATYCLAW_HMS_MODEL_BASE_URL \
+  BEATYCLAW_HMS_MODEL_API_KEY
 do
   if [[ -n "${!deploy_env_key:-}" ]]; then
     set_env_value "$env_file" "$deploy_env_key" "${!deploy_env_key}"

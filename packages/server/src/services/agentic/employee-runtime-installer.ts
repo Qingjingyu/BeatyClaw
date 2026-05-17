@@ -70,23 +70,79 @@ function getHmsHost(): string {
   return process.env.BEATYCLAW_HMS_HOST || '127.0.0.1'
 }
 
+function yamlQuote(value: string): string {
+  return `'${value.replace(/'/g, "''")}'`
+}
+
+function envQuote(value: string): string {
+  return `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`
+}
+
+function parseEnvFile(content: string): Map<string, string> {
+  const entries = new Map<string, string>()
+  for (const line of content.split(/\r?\n/)) {
+    const match = line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)=(.*)\s*$/)
+    if (!match) continue
+    entries.set(match[1], match[2].trim())
+  }
+  return entries
+}
+
+async function readEnvFile(path: string): Promise<Map<string, string>> {
+  try {
+    return parseEnvFile(await readFile(path, 'utf-8'))
+  } catch {
+    return new Map()
+  }
+}
+
+function getHmsModelConfig() {
+  const model = String(process.env.BEATYCLAW_HMS_MODEL || process.env.AGENTIC_DEFAULT_MODEL || '').trim()
+  const baseUrl = String(process.env.BEATYCLAW_HMS_MODEL_BASE_URL || process.env.OPENAI_BASE_URL || '').trim()
+  const provider = String(process.env.BEATYCLAW_HMS_MODEL_PROVIDER || (baseUrl ? 'custom' : '')).trim()
+  const apiKey = String(process.env.BEATYCLAW_HMS_MODEL_API_KEY || process.env.OPENAI_API_KEY || '').trim()
+  return { model, baseUrl, provider, apiKey }
+}
+
 async function writeHermesGatewayConfig(hermesHome: string, port: number, host: string): Promise<void> {
   await mkdir(hermesHome, { recursive: true })
+  const modelConfig = getHmsModelConfig()
+  const lines: string[] = []
+  if (modelConfig.model || modelConfig.provider || modelConfig.baseUrl) {
+    lines.push('model:')
+    if (modelConfig.model) lines.push(`  default: ${yamlQuote(modelConfig.model)}`)
+    if (modelConfig.provider) lines.push(`  provider: ${yamlQuote(modelConfig.provider)}`)
+    if (modelConfig.baseUrl) lines.push(`  base_url: ${yamlQuote(modelConfig.baseUrl)}`)
+  }
+  lines.push(
+    'platforms:',
+    '  api_server:',
+    '    enabled: true',
+    "    key: ''",
+    "    cors_origins: '*'",
+    '    extra:',
+    `      port: ${port}`,
+    `      host: ${host}`,
+    '',
+  )
   await writeFile(
     join(hermesHome, 'config.yaml'),
-    [
-      'platforms:',
-      '  api_server:',
-      '    enabled: true',
-      "    key: ''",
-      "    cors_origins: '*'",
-      '    extra:',
-      `      port: ${port}`,
-      `      host: ${host}`,
-      '',
-    ].join('\n'),
+    lines.join('\n'),
     { mode: 0o600 },
   )
+  const envPath = join(hermesHome, '.env')
+  const envEntries = await readEnvFile(envPath)
+  if (modelConfig.apiKey) envEntries.set('OPENAI_API_KEY', envQuote(modelConfig.apiKey))
+  if (modelConfig.baseUrl) envEntries.set('OPENAI_BASE_URL', envQuote(modelConfig.baseUrl))
+  if (modelConfig.model) envEntries.set('HERMES_MODEL', envQuote(modelConfig.model))
+  const hasModelEnv = Boolean(modelConfig.apiKey || modelConfig.baseUrl || modelConfig.model)
+  if (hasModelEnv) {
+    envEntries.set('GATEWAY_ALLOW_ALL_USERS', 'true')
+  }
+  if (envEntries.size > 0) {
+    const envLines = Array.from(envEntries.entries()).map(([key, value]) => `${key}=${value}`)
+    await writeFile(envPath, envLines.join('\n') + '\n', { mode: 0o600 })
+  }
 }
 
 async function writeHmsPlaceholderLauncher(employee: Employee, port: number): Promise<string> {

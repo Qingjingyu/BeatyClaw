@@ -101,6 +101,29 @@ describe('Employee runtime installer', () => {
     })
   })
 
+  it('writes HMS gateway model config from deployment env', async () => {
+    process.env.BEATYCLAW_HMS_INSTALL_MODE = 'hermes-gateway'
+    process.env.BEATYCLAW_HMS_MODEL = 'gpt-5.5'
+    process.env.BEATYCLAW_HMS_MODEL_PROVIDER = 'custom'
+    process.env.BEATYCLAW_HMS_MODEL_BASE_URL = 'https://key.cosark.com.cn/v1'
+    process.env.BEATYCLAW_HMS_MODEL_API_KEY = 'model-secret'
+    const { installEmployeeRuntime } = await import('../../packages/server/src/services/agentic/employee-runtime-installer')
+    const target = employee('emp_hms_model')
+
+    await installEmployeeRuntime(target)
+
+    const config = await readFile(join(target.instanceRoot, 'config', 'hermes-home', 'config.yaml'), 'utf-8')
+    expect(config).toContain('model:')
+    expect(config).toContain("default: 'gpt-5.5'")
+    expect(config).toContain("provider: 'custom'")
+    expect(config).toContain("base_url: 'https://key.cosark.com.cn/v1'")
+    const env = await readFile(join(target.instanceRoot, 'config', 'hermes-home', '.env'), 'utf-8')
+    expect(env).toContain('OPENAI_API_KEY="model-secret"')
+    expect(env).toContain('OPENAI_BASE_URL="https://key.cosark.com.cn/v1"')
+    expect(env).toContain('HERMES_MODEL="gpt-5.5"')
+    expect(env).toContain('GATEWAY_ALLOW_ALL_USERS=true')
+  })
+
   it('reads HMS gateway API key from the employee hermes home when present', async () => {
     process.env.BEATYCLAW_HMS_INSTALL_MODE = 'hermes-gateway'
     const target = employee('emp_hms_key')
