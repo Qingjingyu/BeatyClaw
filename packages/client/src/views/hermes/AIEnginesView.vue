@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { NButton, NSpin, NTag } from 'naive-ui'
 import { fetchRuntimeStatus, type RuntimeStatusResponse } from '@/api/hermes/runtime'
+import { getEngineDisplayLabel } from '@/utils/engine-display'
 
 const runtimeStatus = ref<RuntimeStatusResponse | null>(null)
 const loading = ref(false)
@@ -12,11 +13,8 @@ const runtimeName = computed(() => {
   const provider = currentRuntime.value?.provider || runtimeStatus.value?.provider
   if (!provider) return '未知'
   if (provider === 'none') return '未安装'
-  if (provider === 'zylos') return 'Zylos'
   if (provider === 'openai-direct') return 'OpenAI Direct'
-  if (provider === 'openclaw') return 'OpenClaw'
-  if (provider === 'hms') return 'HMS'
-  return provider
+  return getEngineDisplayLabel(provider)
 })
 const runtimeState = computed(() => {
   if (loading.value) return { label: '检查中', type: 'default' as const, detail: '正在读取当前 AI 能力端' }

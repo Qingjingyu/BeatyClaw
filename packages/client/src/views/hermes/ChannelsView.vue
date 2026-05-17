@@ -6,6 +6,7 @@ import { useSettingsStore } from '@/stores/hermes/settings'
 import PlatformSettings from '@/components/hermes/settings/PlatformSettings.vue'
 import { fetchHxaOverview, type HxaOverview } from '@/api/agentic/hxa'
 import { fetchRuntimeStatus, type RuntimeStatusResponse } from '@/api/hermes/runtime'
+import { getEngineDisplayLabel } from '@/utils/engine-display'
 import {
   fetchTelegramStatus,
   fetchWeixinQrCode,
@@ -103,7 +104,7 @@ const chainNodes = computed(() => [
   { label: '外部入口', state: (weixinRuntime.value?.running || telegramRuntime.value?.running) ? 'ok' : (connectedCount.value ? 'warn' : 'idle') },
   { label: 'Agentic', state: 'ok' },
   { label: 'Runtime SDK', state: runtime.value?.available ? 'ok' : 'warn' },
-  { label: runtime.value?.provider === 'none' ? 'AI 引擎卡槽' : (runtime.value?.provider || 'AI Runtime'), state: runtime.value?.available ? 'ok' : (runtime.value?.provider === 'none' ? 'idle' : 'warn') },
+  { label: runtime.value?.provider === 'none' ? 'AI 引擎卡槽' : getEngineDisplayLabel(runtime.value?.provider || 'AI Runtime'), state: runtime.value?.available ? 'ok' : (runtime.value?.provider === 'none' ? 'idle' : 'warn') },
   { label: runtime.value?.provider === 'zylos' ? 'worker-bot' : (runtime.value?.provider === 'none' ? '待安装' : '模型 API'), state: runtime.value?.available ? 'ok' : (runtime.value?.provider === 'none' ? 'idle' : 'warn') },
 ])
 const connectors = computed(() => [
@@ -120,7 +121,7 @@ const connectors = computed(() => [
   {
     key: 'telegram',
     name: 'Telegram',
-    source: 'zylos-telegram 参考实现',
+    source: 'COCO Telegram 参考实现',
     priority: '第二候选',
     configured: Boolean(telegramStatus.value?.configured || telegramConfigured.value),
     running: Boolean(telegramRuntime.value?.running),
@@ -130,7 +131,7 @@ const connectors = computed(() => [
   {
     key: 'feishu',
     name: '飞书',
-    source: 'zylos-feishu 参考实现',
+    source: 'COCO 飞书参考实现',
     priority: '第三候选',
     configured: feishuConfigured.value,
     running: false,

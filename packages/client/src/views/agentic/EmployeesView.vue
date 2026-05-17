@@ -3,6 +3,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { NButton, NInput, NModal, NSelect, NSpin, NTag, useMessage } from 'naive-ui'
 import { useEmployeesStore } from '@/stores/agentic/employees'
 import type { Employee, EmployeeEngineType, EmployeeHealthStatus, EmployeeStatus } from '@/api/agentic/employees'
+import { getEngineDisplayLabel } from '@/utils/engine-display'
 
 const employeesStore = useEmployeesStore()
 const message = useMessage()
@@ -16,8 +17,7 @@ const form = reactive({
 const engineOptions = [
   { label: 'OpenClaw', value: 'openclaw' },
   { label: 'HMS', value: 'hms' },
-  { label: 'COCO', value: 'coco' },
-  { label: 'Zylos', value: 'zylos' },
+  { label: 'COCO', value: 'zylos' },
 ]
 
 const statusMap: Record<EmployeeStatus, { label: string; type: 'default' | 'info' | 'success' | 'warning' | 'error' }> = {
@@ -44,7 +44,7 @@ onMounted(() => {
 })
 
 function engineLabel(engine: string) {
-  return engineOptions.find(option => option.value === engine)?.label || engine
+  return getEngineDisplayLabel(engine)
 }
 
 function statusInfo(status: EmployeeStatus) {

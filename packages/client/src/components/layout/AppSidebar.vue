@@ -1,9 +1,11 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive } from "vue";
+import { computed, onMounted, reactive, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
 import { useAppStore } from "@/stores/hermes/app";
 import { useEmployeesStore } from "@/stores/agentic/employees";
+import type { Employee, EmployeeEngineType } from "@/api/agentic/employees";
+import { getEngineDisplayLabel, getEngineStatusLabel } from "@/utils/engine-display";
 import LanguageSwitch from "./LanguageSwitch.vue";
 
 const { t } = useI18n();
@@ -14,8 +16,18 @@ const employeesStore = useEmployeesStore();
 const selectedKey = computed(() => route.name as string);
 const logoPath = '/logo.png';
 const currentEmployee = computed(() => employeesStore.currentEmployee);
+const showCreatePanel = ref(false);
+const createForm = reactive({
+  name: '',
+  engineType: 'hms' as EmployeeEngineType,
+});
 
 const collapsedGroups = reactive<Record<string, boolean>>({});
+const engineOptions: Array<{ label: string; value: EmployeeEngineType }> = [
+  { label: 'HMS', value: 'hms' },
+  { label: 'COCO', value: 'zylos' },
+  { label: 'OpenClaw', value: 'openclaw' },
+];
 
 function toggleGroup(key: string) {
   collapsedGroups[key] = !collapsedGroups[key];
@@ -26,12 +38,44 @@ function isGroupCollapsed(key: string) {
 }
 
 function handleNav(key: string) {
-  router.push({ name: key });
+  router.push({
+    name: key,
+    query: currentEmployee.value?.id ? { employee_id: currentEmployee.value.id } : route.query,
+  });
 }
 
 function handleLogout() {
   localStorage.clear();
   router.replace({ name: 'login' });
+}
+
+function employeeInitial(employee: Employee) {
+  return employee.name.trim().slice(0, 1).toUpperCase() || '员';
+}
+
+async function switchEmployee(employee: Employee) {
+  if (employee.id === employeesStore.currentEmployeeId) return;
+  await employeesStore.selectEmployee(employee.id);
+  await router.replace({
+    name: route.name || 'hermes.chat',
+    query: {
+      ...route.query,
+      employee_id: employee.id,
+    },
+  });
+}
+
+async function createEmployee() {
+  const name = createForm.name.trim();
+  if (!name) return;
+  const employee = await employeesStore.createEmployee({
+    name,
+    engineType: createForm.engineType,
+  });
+  await switchEmployee(employee);
+  createForm.name = '';
+  createForm.engineType = 'hms';
+  showCreatePanel.value = false;
 }
 
 onMounted(() => {
@@ -53,21 +97,56 @@ onMounted(() => {
       </svg>
     </button>
 
-    <button class="employee-switcher" :class="{ active: selectedKey === 'agentic.employees' }" @click="handleNav('agentic.employees')">
-      <img :src="currentEmployee?.avatar || logoPath" :alt="currentEmployee?.name || '数字员工'" class="employee-avatar" />
-      <span class="employee-meta">
-        <strong>{{ currentEmployee?.name || '数字员工' }}</strong>
-        <small>{{ currentEmployee ? `${currentEmployee.engineType} · ${currentEmployee.status}` : '加载中' }}</small>
-      </span>
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <polyline points="9 18 15 12 9 6" />
-      </svg>
-    </button>
+    <section class="employee-section">
+      <div class="employee-section-header">
+        <span>数字员工</span>
+        <button class="icon-action" type="button" title="新增数字员工" @click="showCreatePanel = !showCreatePanel">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 5v14" />
+            <path d="M5 12h14" />
+          </svg>
+        </button>
+      </div>
+
+      <form v-if="showCreatePanel && !appStore.sidebarCollapsed" class="employee-create-panel" @submit.prevent="createEmployee">
+        <input v-model="createForm.name" type="text" placeholder="员工名称" />
+        <select v-model="createForm.engineType">
+          <option v-for="option in engineOptions" :key="option.value" :value="option.value">
+            {{ option.label }}
+          </option>
+        </select>
+        <button type="submit" :disabled="employeesStore.saving || !createForm.name.trim()">
+          创建
+        </button>
+      </form>
+
+      <div class="employee-list" :aria-busy="employeesStore.loading">
+        <button
+          v-for="employee in employeesStore.employees"
+          :key="employee.id"
+          type="button"
+          class="employee-card"
+          :class="{ active: employee.id === employeesStore.currentEmployeeId }"
+          :title="`${employee.name} · ${getEngineDisplayLabel(employee.engineType)}`"
+          @click="switchEmployee(employee)"
+        >
+          <img v-if="employee.avatar" :src="employee.avatar" :alt="employee.name" class="employee-avatar" />
+          <span v-else class="employee-avatar employee-avatar-fallback">{{ employeeInitial(employee) }}</span>
+          <span class="employee-meta">
+            <strong>{{ employee.name }}</strong>
+            <small>{{ getEngineDisplayLabel(employee.engineType) }} · {{ getEngineStatusLabel(employee.status) }}</small>
+          </span>
+        </button>
+        <div v-if="!employeesStore.loading && employeesStore.employees.length === 0" class="employee-empty">
+          暂无员工
+        </div>
+      </div>
+    </section>
 
     <nav class="sidebar-nav">
       <div class="nav-group">
         <div class="nav-group-label" @click="toggleGroup('workspace')">
-          <span>{{ t("sidebar.groupWorkspace") }}</span>
+          <span>{{ currentEmployee?.name || '当前员工工作台' }}</span>
           <svg class="nav-group-arrow" :class="{ collapsed: isGroupCollapsed('workspace') }" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <polyline points="6 9 12 15 18 9" />
           </svg>
@@ -85,6 +164,12 @@ onMounted(() => {
               <polyline points="12 6 12 12 16 14" />
             </svg>
             <span>{{ t("sidebar.history") }}</span>
+          </button>
+          <button class="nav-item" :class="{ active: selectedKey === 'hermes.files' }" @click="handleNav('hermes.files')">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+            </svg>
+            <span>档案</span>
           </button>
           <button class="nav-item" :class="{ active: selectedKey === 'hermes.jobs' }" @click="handleNav('hermes.jobs')">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
@@ -151,6 +236,17 @@ onMounted(() => {
             </svg>
             <span>{{ t("sidebar.memory") }}</span>
           </button>
+        </div>
+      </div>
+
+      <div class="nav-group">
+        <div class="nav-group-label" @click="toggleGroup('system')">
+          <span>数据</span>
+          <svg class="nav-group-arrow" :class="{ collapsed: isGroupCollapsed('system') }" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="6 9 12 15 18 9" />
+          </svg>
+        </div>
+        <div v-show="!isGroupCollapsed('system')">
           <button class="nav-item" :class="{ active: selectedKey === 'hermes.usage' }" @click="handleNav('hermes.usage')">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
               <rect x="3" y="12" width="4" height="9" rx="1" />
@@ -163,13 +259,13 @@ onMounted(() => {
       </div>
 
       <div class="nav-group">
-        <div class="nav-group-label" @click="toggleGroup('system')">
-          <span>系统</span>
-          <svg class="nav-group-arrow" :class="{ collapsed: isGroupCollapsed('system') }" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <div class="nav-group-label" @click="toggleGroup('settings')">
+          <span>设置</span>
+          <svg class="nav-group-arrow" :class="{ collapsed: isGroupCollapsed('settings') }" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <polyline points="6 9 12 15 18 9" />
           </svg>
         </div>
-        <div v-show="!isGroupCollapsed('system')">
+        <div v-show="!isGroupCollapsed('settings')">
           <button class="nav-item" :class="{ active: selectedKey === 'agentic.employees' }" @click="handleNav('agentic.employees')">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
               <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
@@ -177,7 +273,7 @@ onMounted(() => {
               <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
               <path d="M16 3.13a4 4 0 0 1 0 7.75" />
             </svg>
-            <span>数字员工</span>
+            <span>员工管理</span>
           </button>
           <button class="nav-item" :class="{ active: selectedKey === 'hermes.settings' }" @click="handleNav('hermes.settings')">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
@@ -285,7 +381,7 @@ onMounted(() => {
 .sidebar-nav {
   flex: 1;
   display: flex;
-  padding-top: 12px;
+  padding-top: 10px;
   flex-direction: column;
   gap: 6px;
   overflow-y: auto;
@@ -297,33 +393,123 @@ onMounted(() => {
   }
 }
 
-.employee-switcher {
+.employee-section {
+  padding: 14px 2px 10px;
+  border-bottom: 1px solid $border-color;
+}
+
+.employee-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 10px 8px;
+  color: $text-muted;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.icon-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: 1px solid $border-color;
+  border-radius: 50%;
+  background: $bg-card;
+  color: $text-secondary;
+  cursor: pointer;
+
+  &:hover {
+    color: $text-primary;
+    border-color: rgba(var(--accent-primary-rgb), 0.45);
+  }
+}
+
+.employee-create-panel {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+  padding: 8px;
+  margin-bottom: 8px;
+  border: 1px solid $border-color;
+  border-radius: $radius-md;
+  background: $bg-card;
+
+  input,
+  select {
+    width: 100%;
+    border: 1px solid $border-color;
+    border-radius: $radius-sm;
+    padding: 8px 9px;
+    background: $bg-primary;
+    color: $text-primary;
+    font-size: 12px;
+    outline: none;
+  }
+
+  button {
+    border: none;
+    border-radius: $radius-sm;
+    padding: 8px 10px;
+    background: $accent-primary;
+    color: white;
+    font-size: 12px;
+    cursor: pointer;
+
+    &:disabled {
+      cursor: not-allowed;
+      opacity: 0.55;
+    }
+  }
+}
+
+.employee-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.employee-card {
   display: flex;
   align-items: center;
   gap: 10px;
   width: 100%;
-  padding: 10px 12px;
-  margin: 4px 0 8px;
-  border: 1px solid $border-color;
+  padding: 10px;
+  border: 1px solid transparent;
   border-radius: $radius-md;
-  background: $bg-card;
+  background: transparent;
   color: $text-primary;
   cursor: pointer;
-  transition: all $transition-fast;
+  text-align: left;
+  transition: background-color $transition-fast, border-color $transition-fast;
 
-  &:hover,
-  &.active {
-    border-color: rgba(var(--accent-primary-rgb), 0.45);
+  &:hover {
     background: rgba(var(--accent-primary-rgb), 0.06);
+  }
+
+  &.active {
+    border-color: rgba(var(--accent-primary-rgb), 0.24);
+    background: rgba(var(--accent-primary-rgb), 0.1);
   }
 }
 
 .employee-avatar {
-  width: 28px;
-  height: 28px;
+  width: 30px;
+  height: 30px;
   border-radius: 50%;
   object-fit: cover;
   flex-shrink: 0;
+}
+
+.employee-avatar-fallback {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: $bg-card;
+  color: $text-primary;
+  font-size: 13px;
+  font-weight: 650;
 }
 
 .employee-meta {
@@ -345,13 +531,19 @@ onMounted(() => {
   strong {
     color: $text-primary;
     font-size: 13px;
-    font-weight: 600;
+    font-weight: 650;
   }
 
   small {
     color: $text-muted;
     font-size: 11px;
   }
+}
+
+.employee-empty {
+  padding: 12px;
+  color: $text-muted;
+  font-size: 12px;
 }
 
 .nav-group {
@@ -506,15 +698,24 @@ onMounted(() => {
     margin: 0 auto 8px;
   }
 
-  .employee-switcher {
+  .employee-section {
+    padding: 10px 0;
+  }
+
+  .employee-section-header span,
+  .employee-meta {
+    display: none;
+  }
+
+  .employee-section-header {
+    justify-content: center;
+    padding: 0 0 8px;
+  }
+
+  .employee-card {
     justify-content: center;
     padding: 8px 4px;
     gap: 0;
-
-    .employee-meta,
-    svg {
-      display: none;
-    }
   }
 
   .nav-group-label {

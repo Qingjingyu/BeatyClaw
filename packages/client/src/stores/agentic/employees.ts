@@ -18,6 +18,8 @@ export const useEmployeesStore = defineStore('employees', () => {
   const loading = ref(false)
   const saving = ref(false)
   const error = ref('')
+  const lastLoadedAt = ref(0)
+  const cacheTtlMs = 10_000
 
   const currentEmployee = computed(() =>
     employees.value.find(employee => employee.id === currentEmployeeId.value) || employees.value[0] || null,
@@ -26,6 +28,7 @@ export const useEmployeesStore = defineStore('employees', () => {
   function applyList(payload: { currentEmployeeId: string; employees: Employee[] }) {
     employees.value = payload.employees
     currentEmployeeId.value = payload.currentEmployeeId
+    lastLoadedAt.value = Date.now()
   }
 
   function upsertEmployee(employee: Employee) {
@@ -34,7 +37,11 @@ export const useEmployeesStore = defineStore('employees', () => {
     else employees.value[index] = employee
   }
 
-  async function loadEmployees() {
+  async function loadEmployees(options: { force?: boolean } = {}) {
+    if (!options.force && employees.value.length > 0 && Date.now() - lastLoadedAt.value < cacheTtlMs) {
+      return
+    }
+    if (loading.value) return
     loading.value = true
     error.value = ''
     try {
@@ -52,6 +59,7 @@ export const useEmployeesStore = defineStore('employees', () => {
     try {
       const employee = await apiCreateEmployee(payload)
       upsertEmployee(employee)
+      lastLoadedAt.value = Date.now()
       return employee
     } finally {
       saving.value = false

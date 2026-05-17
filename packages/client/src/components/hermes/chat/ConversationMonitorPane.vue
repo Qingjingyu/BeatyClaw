@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { fetchConversationDetail, fetchConversationSummaries, type ConversationDetail, type ConversationSummary } from '@/api/hermes/conversations'
 import { formatTimestampSeconds, getSourceLabel } from '@/shared/session-display'
+import { getEngineDisplayLabel } from '@/utils/engine-display'
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
@@ -52,7 +53,7 @@ function runtimeTraceLabel(trace: ConversationDetail['messages'][number]['runtim
   if (!trace) return ''
   const parts = [
     trace.channel ? `来源：${channelLabel(trace.channel)}` : '',
-    trace.runtime_provider ? `AI 层：${trace.runtime_provider}` : '',
+    trace.runtime_provider ? `AI 层：${getEngineDisplayLabel(trace.runtime_provider)}` : '',
     trace.runtime_model ? `模型：${trace.runtime_model}` : '',
     trace.worker_dispatched ? `Worker：${trace.worker_bot || 'worker-bot'}` : 'Worker：未派发',
     trace.status ? `状态：${statusLabel(trace.status)}` : '',

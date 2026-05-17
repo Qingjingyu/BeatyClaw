@@ -55,7 +55,7 @@ const connectors = computed(() => [
   {
     key: 'telegram',
     name: 'Telegram',
-    source: 'zylos-telegram 参考实现，当前保存 Bot Token',
+    source: 'COCO Telegram 参考实现，当前保存 Bot Token',
     priority: '第二候选',
     configured: telegramConfigured.value,
     state: telegramConfigured.value ? '已保存 Token' : '待配置',
@@ -64,7 +64,7 @@ const connectors = computed(() => [
   {
     key: 'feishu',
     name: '飞书',
-    source: 'zylos-feishu 参考实现，当前保存应用凭证',
+    source: 'COCO 飞书参考实现，当前保存应用凭证',
     priority: '第三候选',
     configured: feishuConfigured.value,
     state: feishuConfigured.value ? '已保存应用凭证' : '待配置',

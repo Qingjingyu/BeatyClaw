@@ -58,6 +58,34 @@ describe('Employees Store', () => {
     expect(store.employees).toHaveLength(2)
   })
 
+  it('reuses a fresh employee list unless force reload is requested', async () => {
+    mockEmployeesApi.fetchEmployees.mockResolvedValue({
+      currentEmployeeId: 'emp_1',
+      employees: [
+        {
+          id: 'emp_1',
+          name: '缓存员工',
+          engineType: 'hms',
+          status: 'running',
+          instanceRoot: '/tmp/employees/emp_1',
+          runtimeUrl: '',
+          containerName: 'beautyclaw-employee-emp_1',
+          port: null,
+          healthStatus: 'healthy',
+        },
+      ],
+    })
+
+    const store = useEmployeesStore()
+    await store.loadEmployees()
+    await store.loadEmployees()
+
+    expect(mockEmployeesApi.fetchEmployees).toHaveBeenCalledTimes(1)
+
+    await store.loadEmployees({ force: true })
+    expect(mockEmployeesApi.fetchEmployees).toHaveBeenCalledTimes(2)
+  })
+
   it('creates and upserts an employee', async () => {
     mockEmployeesApi.createEmployee.mockResolvedValue({
       id: 'emp_1',
