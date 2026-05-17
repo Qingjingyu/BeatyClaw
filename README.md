@@ -611,6 +611,14 @@ BEATYCLAW_HMS_PORT=4581
 
 开启后，HMS / COCO / OpenClaw 员工可以走 Docker 容器模式。容器会使用员工自己的 `containerName`，挂载员工目录到 `/home/agent/employee`，端口默认只绑定 `127.0.0.1`。默认不启用 Docker 模式，避免影响当前线上 process runtime。
 
+端口池配置：
+
+```env
+BEATYCLAW_HMS_PORT_RANGE=4800-4899
+```
+
+没有固定 `BEATYCLAW_HMS_PORT` 时，installer 会扫描同级员工的 `runtime-install.json`，从端口池里拿第一个未使用端口，避免多个员工抢同一个 runtime 端口。
+
 ## 关键目录
 
 ```text
