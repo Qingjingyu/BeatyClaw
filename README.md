@@ -601,6 +601,16 @@ V2 已补强进程级生命周期：
 - health 会检查 pid 是否还活着；进程退出会落为 `failed / unhealthy`。
 - 同一台服务器上可以同时运行多个员工占位 runtime，端口和日志互不混用。
 
+V3 已新增容器级 adapter：
+
+```env
+BEATYCLAW_HMS_RUNTIME_MODE=docker
+BEATYCLAW_HMS_DOCKER_IMAGE=your-hms-image
+BEATYCLAW_HMS_PORT=4581
+```
+
+开启后，HMS / COCO / OpenClaw 员工可以走 Docker 容器模式。容器会使用员工自己的 `containerName`，挂载员工目录到 `/home/agent/employee`，端口默认只绑定 `127.0.0.1`。默认不启用 Docker 模式，避免影响当前线上 process runtime。
+
 ## 关键目录
 
 ```text
