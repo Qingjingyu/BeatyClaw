@@ -1,0 +1,62 @@
+import { request } from '../client'
+
+export type EmployeeStatus = 'draft' | 'deploying' | 'installed' | 'running' | 'stopped' | 'failed'
+export type EmployeeEngineType = 'openclaw' | 'hms' | 'coco' | 'zylos'
+
+export interface Employee {
+  id: string
+  name: string
+  avatar?: string
+  engineType: EmployeeEngineType
+  status: EmployeeStatus
+  systemRole: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface EmployeeListResponse {
+  currentEmployeeId: string
+  employees: Employee[]
+}
+
+export interface CreateEmployeePayload {
+  name: string
+  avatar?: string
+  engineType: EmployeeEngineType
+  systemRole?: string
+}
+
+export function fetchEmployees(): Promise<EmployeeListResponse> {
+  return request<EmployeeListResponse>('/api/employees')
+}
+
+export function createEmployee(payload: CreateEmployeePayload): Promise<Employee> {
+  return request<Employee>('/api/employees', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+export function selectEmployee(id: string): Promise<EmployeeListResponse> {
+  return request<EmployeeListResponse>(`/api/employees/${encodeURIComponent(id)}/select`, {
+    method: 'POST',
+  })
+}
+
+export function deployEmployee(id: string): Promise<Employee> {
+  return request<Employee>(`/api/employees/${encodeURIComponent(id)}/deploy`, {
+    method: 'POST',
+  })
+}
+
+export function startEmployee(id: string): Promise<Employee> {
+  return request<Employee>(`/api/employees/${encodeURIComponent(id)}/start`, {
+    method: 'POST',
+  })
+}
+
+export function stopEmployee(id: string): Promise<Employee> {
+  return request<Employee>(`/api/employees/${encodeURIComponent(id)}/stop`, {
+    method: 'POST',
+  })
+}

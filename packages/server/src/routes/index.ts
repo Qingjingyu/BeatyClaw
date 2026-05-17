@@ -7,6 +7,7 @@ import { uploadRoutes } from './upload'
 import { updateRoutes } from './update'
 import { authPublicRoutes, authProtectedRoutes } from './auth'
 import { agenticHxaRoutes } from './agentic/hxa'
+import { employeeRoutes } from './agentic/employees'
 
 // Hermes route modules
 import { sessionRoutes } from './hermes/sessions'
@@ -51,6 +52,7 @@ export function registerRoutes(app: any, requireAuth: (ctx: Context, next: Next)
 
   // --- Protected routes (auth required) ---
   app.use(authProtectedRoutes.routes())
+  app.use(employeeRoutes.routes())
   app.use(agenticHxaRoutes.routes())
   app.use(uploadRoutes.routes())
   app.use(updateRoutes.routes())           // Must be before proxy (proxy catch-all matches everything)

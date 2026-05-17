@@ -45,6 +45,11 @@ const router = createRouter({
       component: () => import('@/views/hermes/AIEnginesView.vue'),
     },
     {
+      path: '/agentic/employees',
+      name: 'agentic.employees',
+      component: () => import('@/views/agentic/EmployeesView.vue'),
+    },
+    {
       path: '/hermes/profiles',
       name: 'hermes.profiles',
       component: () => import('@/views/hermes/ProfilesView.vue'),
