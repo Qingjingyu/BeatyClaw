@@ -1,5 +1,5 @@
-import { chmod, mkdir, readFile, writeFile } from 'fs/promises'
-import { join } from 'path'
+import { chmod, mkdir, readdir, readFile, writeFile } from 'fs/promises'
+import { dirname, join } from 'path'
 import type { Employee, EmployeeEngineType } from './employees'
 import { getHermesBin } from '../hermes/hermes-path'
 
@@ -37,8 +37,52 @@ function parsePort(value: unknown, fallback: number): number {
   return port
 }
 
+function parsePortRange(value: unknown): { start: number; end: number } | null {
+  const match = String(value || '').trim().match(/^(\d+)\s*-\s*(\d+)$/)
+  if (!match) return null
+  const start = Number(match[1])
+  const end = Number(match[2])
+  if (!Number.isInteger(start) || !Number.isInteger(end) || start <= 0 || end > 65535 || start > end) return null
+  return { start, end }
+}
+
 function getInstallerEnvKey(engineType: EmployeeEngineType, suffix: string): string {
   return `BEATYCLAW_${engineType.toUpperCase()}_${suffix}`
+}
+
+async function collectUsedPorts(employee: Employee): Promise<Set<number>> {
+  const used = new Set<number>()
+  const employeesRoot = dirname(employee.instanceRoot)
+  try {
+    const entries = await readdir(employeesRoot, { withFileTypes: true })
+    await Promise.all(entries.filter(entry => entry.isDirectory()).map(async entry => {
+      try {
+        const parsed = JSON.parse(await readFile(join(employeesRoot, entry.name, 'config', 'runtime-install.json'), 'utf-8'))
+        const port = Number(parsed.port)
+        if (Number.isInteger(port) && port > 0 && port <= 65535) used.add(port)
+      } catch {
+        // Missing or invalid manifests do not reserve ports.
+      }
+    }))
+  } catch {
+    // Missing employees root means no reserved ports yet.
+  }
+  return used
+}
+
+async function resolvePort(employee: Employee, engineType: EmployeeEngineType, fixedPortValue: unknown): Promise<number> {
+  const fallback = defaultPort(employee)
+  const fixedPort = Number(fixedPortValue)
+  if (Number.isInteger(fixedPort) && fixedPort > 0 && fixedPort <= 65535) return fixedPort
+
+  const range = parsePortRange(process.env[getInstallerEnvKey(engineType, 'PORT_RANGE')])
+  if (!range) return fallback
+
+  const used = await collectUsedPorts(employee)
+  for (let port = range.start; port <= range.end; port += 1) {
+    if (!used.has(port)) return port
+  }
+  return fallback
 }
 
 function splitArgs(raw: string): string[] {
@@ -212,7 +256,7 @@ export async function installEmployeeRuntime(employee: Employee): Promise<Employ
 }
 
 async function installGenericRuntime(employee: Employee): Promise<EmployeeRuntimeInstallManifest> {
-  const port = parsePort(process.env[getInstallerEnvKey(employee.engineType, 'PORT')], defaultPort(employee))
+  const port = await resolvePort(employee, employee.engineType, process.env[getInstallerEnvKey(employee.engineType, 'PORT')])
   const healthUrl = String(process.env[getInstallerEnvKey(employee.engineType, 'HEALTH_URL')] || `http://127.0.0.1:${port}/health`)
   const startCommand = String(process.env[getInstallerEnvKey(employee.engineType, 'START_COMMAND')] || process.execPath)
   const configuredArgs = splitArgs(String(process.env[getInstallerEnvKey(employee.engineType, 'START_ARGS')] || ''))
@@ -234,7 +278,7 @@ async function installGenericRuntime(employee: Employee): Promise<EmployeeRuntim
 }
 
 async function installHmsRuntime(employee: Employee): Promise<EmployeeRuntimeInstallManifest> {
-  const port = parsePort(process.env.BEATYCLAW_HMS_PORT, defaultPort(employee))
+  const port = await resolvePort(employee, 'hms', process.env.BEATYCLAW_HMS_PORT)
   const host = getHmsHost()
   const healthUrl = String(process.env.BEATYCLAW_HMS_HEALTH_URL || `${buildUrl(host, port)}/health`)
   const command = String(process.env.BEATYCLAW_HMS_START_COMMAND || process.execPath)

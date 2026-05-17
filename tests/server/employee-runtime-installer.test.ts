@@ -69,6 +69,43 @@ describe('Employee runtime installer', () => {
     })
   })
 
+  it('allocates the next free port from a configured engine port range', async () => {
+    process.env.BEATYCLAW_HMS_PORT_RANGE = '4800-4802'
+    const { installEmployeeRuntime } = await import('../../packages/server/src/services/agentic/employee-runtime-installer')
+    const first = {
+      ...employee('emp_hms_port_a'),
+      instanceRoot: join(instanceRoot, 'first'),
+    }
+    const second = {
+      ...employee('emp_hms_port_b'),
+      instanceRoot: join(instanceRoot, 'second'),
+    }
+
+    await mkdir(join(first.instanceRoot, 'config'), { recursive: true })
+    await writeFile(join(first.instanceRoot, 'config', 'runtime-install.json'), JSON.stringify({
+      employeeId: first.id,
+      engineType: 'hms',
+      runtimeUrl: 'http://127.0.0.1:4800/health',
+      port: 4800,
+      startCommand: process.execPath,
+      startArgs: [],
+      env: {},
+      healthUrl: 'http://127.0.0.1:4800/health',
+      apiKey: '',
+      installedAt: new Date().toISOString(),
+      installMode: 'placeholder',
+    }, null, 2))
+
+    const manifest = await installEmployeeRuntime(second)
+
+    expect(manifest).toMatchObject({
+      employeeId: second.id,
+      port: 4801,
+      runtimeUrl: 'http://127.0.0.1:4801/health',
+      healthUrl: 'http://127.0.0.1:4801/health',
+    })
+  })
+
   it('writes a Hermes gateway install manifest when requested', async () => {
     process.env.BEATYCLAW_HMS_INSTALL_MODE = 'hermes-gateway'
     process.env.BEATYCLAW_HMS_PORT = '4621'
