@@ -168,6 +168,45 @@ describe('Conversation Hub', () => {
     expect(result.replyText).toBe('direct reply')
   })
 
+  it('can route product conversations through the HMS employee runtime provider', async () => {
+    process.env = { ...originalEnv, BEATYCLAW_RUNTIME_PROVIDER: 'hms' }
+    const messages: any[] = []
+    const hub = createConversationHub({
+      getSession: () => null,
+      createSession: (data) => data as any,
+      addMessage: (message) => {
+        messages.push(message)
+        return messages.length
+      },
+      updateSessionStats: vi.fn(),
+      updateUsage: vi.fn(),
+      createRuntimeAdapter: (provider) => ({
+        provider,
+        sendMessage: async () => ({
+          id: 'hms_run_1',
+          provider,
+          model: 'hms-gateway',
+          outputText: 'HMS 员工回复',
+        }),
+        getStatus: () => ({ provider, available: true, mode: 'active' }),
+      }),
+      countTokens: () => 1,
+      nowSeconds: () => 1778933000,
+      logger: { warn: vi.fn() },
+    })
+
+    const result = await hub.receiveMessage({ channel: 'web', externalUserId: 'web-user-1', text: '你好' })
+
+    expect(result.runtimeProvider).toBe('hms')
+    expect(result.replyText).toBe('HMS 员工回复')
+    expect(JSON.parse(messages[1].reasoning_details)).toMatchObject({
+      runtime_provider: 'hms',
+      runtime_model: 'hms-gateway',
+      runtime_run_id: 'hms_run_1',
+      status: 'ok',
+    })
+  })
+
   it('stores inbound messages but does not call a runtime when no AI engine is installed', async () => {
     process.env = { ...originalEnv, BEATYCLAW_RUNTIME_PROVIDER: 'none' }
     const messages: any[] = []

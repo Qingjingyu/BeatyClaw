@@ -1,5 +1,7 @@
 import type { ContentBlock } from '../hermes/chat-run-socket'
 import { createHxaMainAgentRun, type HxaMainAgentRun } from './runtime'
+import { getCurrentEmployee } from './employees'
+import { readEmployeeRuntimeState } from './employee-runtime'
 
 export type BeatyClawRuntimeProvider = 'none' | 'zylos' | 'openai-direct' | 'openclaw' | 'hms'
 
@@ -50,6 +52,12 @@ export interface ZylosRuntimeAdapterOptions {
 
 export interface OpenAiDirectRuntimeAdapterOptions {
   fetchImpl?: typeof fetch
+}
+
+export interface HmsRuntimeAdapterOptions {
+  fetchImpl?: typeof fetch
+  getCurrentEmployee?: typeof getCurrentEmployee
+  readEmployeeRuntimeState?: typeof readEmployeeRuntimeState
 }
 
 const DEFAULT_RUNTIME_PROVIDER: BeatyClawRuntimeProvider = 'none'
@@ -218,10 +226,87 @@ export function createOpenAiDirectRuntimeAdapter(options: OpenAiDirectRuntimeAda
   }
 }
 
+export function createHmsRuntimeAdapter(options: HmsRuntimeAdapterOptions = {}): BeatyClawRuntime {
+  const fetchImpl = options.fetchImpl || fetch
+  const getEmployee = options.getCurrentEmployee || getCurrentEmployee
+  const readRuntimeState = options.readEmployeeRuntimeState || readEmployeeRuntimeState
+
+  async function resolveRuntime() {
+    const employee = await getEmployee()
+    if (employee.engineType !== 'hms') throw new Error(`Current employee engine is ${employee.engineType}, not hms`)
+    const state = await readRuntimeState(employee)
+    const upstream = (state.runtimeUrl || employee.runtimeUrl || '').replace(/\/health$/, '').replace(/\/+$/, '')
+    if (!upstream) throw new Error('Current HMS employee runtime has no runtimeUrl')
+    if (state.status !== 'running' || state.healthStatus !== 'healthy') {
+      throw new Error(`Current HMS employee runtime is not healthy: ${state.status}/${state.healthStatus}`)
+    }
+    return { employee, state, upstream }
+  }
+
+  return {
+    provider: 'hms',
+
+    async sendMessage(input: RuntimeMessageInput): Promise<RuntimeMessageResult> {
+      const { employee, state, upstream } = await resolveRuntime()
+      const content = contentToText(input.text).trim()
+      if (!content) throw new Error('hms runtime input is empty')
+
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+      if (state.apiKey) headers.Authorization = `Bearer ${state.apiKey}`
+      const res = await fetchImpl(`${upstream}/v1/chat/completions`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          model: process.env.BEATYCLAW_HMS_MODEL || 'hms',
+          messages: [{ role: 'user', content }],
+          metadata: {
+            employeeId: employee.id,
+            channel: input.channel,
+            sessionId: input.sessionId,
+            ...(input.metadata || {}),
+          },
+        }),
+      })
+      const raw = await res.text()
+      if (!res.ok) throw new Error(`hms runtime failed with ${res.status}: ${raw || res.statusText}`)
+      const data = raw ? JSON.parse(raw) : {}
+      const outputText = String(data?.choices?.[0]?.message?.content || data?.output_text || '').trim()
+      if (!outputText) throw new Error('hms runtime returned no output')
+      return {
+        id: String(data.id || `hms_${Date.now()}`),
+        provider: 'hms',
+        model: String(data.model || process.env.BEATYCLAW_HMS_MODEL || 'hms'),
+        outputText,
+      }
+    },
+
+    getStatus(): RuntimeStatus {
+      return {
+        provider: 'hms',
+        available: true,
+        mode: 'active',
+        detail: 'HMS runtime routes messages to the current employee runtime instance.',
+        capabilities: ['chat', 'channel-reply'],
+        missingConfig: [],
+        checks: [
+          {
+            key: 'CURRENT_EMPLOYEE_HMS_RUNTIME',
+            label: '当前员工 HMS Runtime',
+            ok: true,
+            required: true,
+            detail: 'Runtime is resolved per request from current employee state.',
+          },
+        ],
+      }
+    },
+  }
+}
+
 export function createRuntimeAdapter(provider: BeatyClawRuntimeProvider): BeatyClawRuntime {
   if (provider === 'none') return createNoneRuntimeAdapter()
   if (provider === 'zylos') return createZylosRuntimeAdapter()
   if (provider === 'openai-direct') return createOpenAiDirectRuntimeAdapter()
+  if (provider === 'hms') return createHmsRuntimeAdapter()
   return createUnsupportedRuntimeAdapter(provider)
 }
 

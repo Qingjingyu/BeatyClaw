@@ -16,6 +16,7 @@ export interface EmployeeRuntimeState {
   mode: 'local' | 'process'
   pid: number | null
   lastError: string
+  apiKey: string
 }
 
 export interface EmployeeRuntimeAdapter {
@@ -46,10 +47,11 @@ function defaultRuntimeState(employee: Employee): EmployeeRuntimeState {
     mode: 'local',
     pid: null,
     lastError: '',
+    apiKey: '',
   }
 }
 
-async function readRuntimeState(employee: Employee): Promise<EmployeeRuntimeState> {
+export async function readEmployeeRuntimeState(employee: Employee): Promise<EmployeeRuntimeState> {
   try {
     const parsed = JSON.parse(await readFile(getRuntimeStatePath(employee), 'utf-8'))
     return {
@@ -65,6 +67,7 @@ async function readRuntimeState(employee: Employee): Promise<EmployeeRuntimeStat
       mode: parsed.mode === 'process' ? 'process' : 'local',
       pid: typeof parsed.pid === 'number' ? parsed.pid : null,
       lastError: String(parsed.lastError || parsed.last_error || ''),
+      apiKey: String(parsed.apiKey || parsed.api_key || ''),
     }
   } catch {
     return defaultRuntimeState(employee)
@@ -78,7 +81,7 @@ async function writeRuntimeState(employee: Employee, state: EmployeeRuntimeState
 }
 
 async function updateRuntimeState(employee: Employee, patch: Partial<EmployeeRuntimeState>): Promise<EmployeeRuntimeState> {
-  const previous = await readRuntimeState(employee)
+  const previous = await readEmployeeRuntimeState(employee)
   return writeRuntimeState(employee, {
     ...previous,
     ...patch,
@@ -99,6 +102,7 @@ export class LocalEmployeeRuntimeAdapter implements EmployeeRuntimeAdapter {
       mode: 'local',
       pid: null,
       lastError: '',
+      apiKey: '',
     })
   }
 
@@ -109,6 +113,7 @@ export class LocalEmployeeRuntimeAdapter implements EmployeeRuntimeAdapter {
       mode: 'local',
       pid: null,
       lastError: '',
+      apiKey: '',
     })
   }
 
@@ -119,11 +124,12 @@ export class LocalEmployeeRuntimeAdapter implements EmployeeRuntimeAdapter {
       mode: 'local',
       pid: null,
       lastError: '',
+      apiKey: '',
     })
   }
 
   async health(employee: Employee): Promise<EmployeeRuntimeState> {
-    const state = await readRuntimeState(employee)
+    const state = await readEmployeeRuntimeState(employee)
     if (state.status === 'running') {
       return updateRuntimeState(employee, { healthStatus: 'healthy', status: 'running' })
     }
@@ -141,6 +147,7 @@ interface ProcessRuntimeConfig {
   healthUrl: string
   port: number | null
   env: Record<string, string>
+  apiKey: string
 }
 
 const processRegistry = new Map<string, ChildProcess>()
@@ -167,6 +174,7 @@ function getProcessRuntimeConfig(engineType: EmployeeEngineType): ProcessRuntime
     healthUrl,
     port: Number.isInteger(portValue) && portValue > 0 && portValue <= 65535 ? portValue : null,
     env: {},
+    apiKey: '',
   }
 }
 
@@ -181,6 +189,7 @@ async function getRuntimeLaunchConfig(employee: Employee, engineType: EmployeeEn
     healthUrl: manifest.healthUrl || envConfig.healthUrl,
     port: manifest.port || envConfig.port,
     env: { ...envConfig.env, ...manifest.env },
+    apiKey: manifest.apiKey || envConfig.apiKey,
   }
 }
 
@@ -211,6 +220,7 @@ export class ProcessEmployeeRuntimeAdapter implements EmployeeRuntimeAdapter {
       mode: 'process',
       pid: null,
       lastError: '',
+      apiKey: manifest.apiKey || config.apiKey,
     })
   }
 
@@ -228,6 +238,7 @@ export class ProcessEmployeeRuntimeAdapter implements EmployeeRuntimeAdapter {
         mode: 'process',
         pid: existing.pid || null,
         lastError: '',
+        apiKey: config.apiKey,
       })
     }
 
@@ -255,6 +266,7 @@ export class ProcessEmployeeRuntimeAdapter implements EmployeeRuntimeAdapter {
         mode: 'process',
         pid: child.pid || null,
         lastError: '',
+        apiKey: config.apiKey,
       })
     } catch (err) {
       return updateRuntimeState(employee, {
@@ -265,6 +277,7 @@ export class ProcessEmployeeRuntimeAdapter implements EmployeeRuntimeAdapter {
         mode: 'process',
         pid: null,
         lastError: err instanceof Error ? err.message : String(err),
+        apiKey: config.apiKey,
       })
     }
   }
@@ -284,6 +297,7 @@ export class ProcessEmployeeRuntimeAdapter implements EmployeeRuntimeAdapter {
       mode: 'process',
       pid: null,
       lastError: '',
+      apiKey: config.apiKey,
     })
   }
 
@@ -291,12 +305,13 @@ export class ProcessEmployeeRuntimeAdapter implements EmployeeRuntimeAdapter {
     const config = await getRuntimeLaunchConfig(employee, this.engineType)
     if (!config.enabled) return this.fallback.health(employee)
 
-    const state = await readRuntimeState(employee)
+    const state = await readEmployeeRuntimeState(employee)
     if (state.status !== 'running') {
       return updateRuntimeState(employee, {
         status: state.status,
         healthStatus: state.status === 'stopped' || state.status === 'installed' ? 'stopped' : 'unknown',
         mode: 'process',
+        apiKey: config.apiKey,
       })
     }
 
@@ -308,6 +323,7 @@ export class ProcessEmployeeRuntimeAdapter implements EmployeeRuntimeAdapter {
       port: config.port,
       mode: 'process',
       lastError: healthy ? '' : 'Health check failed',
+      apiKey: config.apiKey,
     })
   }
 }

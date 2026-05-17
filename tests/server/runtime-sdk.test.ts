@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   createConfiguredRuntimeAdapter,
+  createHmsRuntimeAdapter,
   createOpenAiDirectRuntimeAdapter,
   createRuntimeAdapter,
   createZylosRuntimeAdapter,
@@ -84,6 +85,58 @@ describe('BeatyClaw runtime SDK', () => {
       mode: 'unsupported',
     })
     await expect(runtime.sendMessage({ text: 'hello' })).rejects.toThrow('openclaw runtime adapter is not implemented yet')
+  })
+
+  it('routes HMS messages to the current employee runtime gateway', async () => {
+    const employee: any = {
+      id: 'emp_hms',
+      engineType: 'hms',
+      runtimeUrl: 'http://127.0.0.1:4621/health',
+    }
+    const fetchMock = vi.fn(async (_url, init: RequestInit) => {
+      expect(_url).toBe('http://127.0.0.1:4621/v1/chat/completions')
+      expect(init.method).toBe('POST')
+      expect(init.headers).toMatchObject({
+        Authorization: 'Bearer hms-key',
+        'Content-Type': 'application/json',
+      })
+      expect(JSON.parse(String(init.body))).toMatchObject({
+        model: 'hms',
+        messages: [{ role: 'user', content: '员工你好' }],
+        metadata: { employeeId: 'emp_hms', channel: 'web', sessionId: 's1' },
+      })
+      return new Response(JSON.stringify({
+        id: 'hms_run_1',
+        model: 'hms-gateway',
+        choices: [{ message: { content: '员工 HMS 回复' } }],
+      }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    })
+
+    const runtime = createHmsRuntimeAdapter({
+      fetchImpl: fetchMock as any,
+      getCurrentEmployee: async () => employee,
+      readEmployeeRuntimeState: async () => ({
+        employeeId: 'emp_hms',
+        engineType: 'hms',
+        status: 'running',
+        healthStatus: 'healthy',
+        runtimeUrl: 'http://127.0.0.1:4621/health',
+        port: 4621,
+        containerName: 'beautyclaw-employee-emp_hms',
+        updatedAt: new Date().toISOString(),
+        mode: 'process',
+        pid: 123,
+        lastError: '',
+        apiKey: 'hms-key',
+      }),
+    })
+
+    await expect(runtime.sendMessage({ sessionId: 's1', channel: 'web', text: '员工你好' })).resolves.toMatchObject({
+      id: 'hms_run_1',
+      provider: 'hms',
+      model: 'hms-gateway',
+      outputText: '员工 HMS 回复',
+    })
   })
 
   it('keeps the product shell online when no AI engine is installed', async () => {

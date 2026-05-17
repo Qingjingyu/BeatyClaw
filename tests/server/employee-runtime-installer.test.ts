@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { mkdtemp, readFile, rm, stat } from 'fs/promises'
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'fs/promises'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import type { Employee } from '../../packages/server/src/services/agentic/employees'
@@ -98,6 +98,42 @@ describe('Employee runtime installer', () => {
     expect(JSON.parse(await readFile(getInstallManifestPath(target), 'utf-8'))).toMatchObject({
       installMode: 'hermes-gateway',
       startArgs: ['gateway', 'run', '--replace'],
+    })
+  })
+
+  it('reads HMS gateway API key from the employee hermes home when present', async () => {
+    process.env.BEATYCLAW_HMS_INSTALL_MODE = 'hermes-gateway'
+    const target = employee('emp_hms_key')
+    await mkdir(join(target.instanceRoot, 'config', 'hermes-home'), { recursive: true })
+    await writeFile(
+      join(target.instanceRoot, 'config', 'hermes-home', '.env'),
+      'API_SERVER_KEY="employee-secret"\n',
+    )
+    const { installEmployeeRuntime } = await import('../../packages/server/src/services/agentic/employee-runtime-installer')
+
+    await expect(installEmployeeRuntime(target)).resolves.toMatchObject({
+      apiKey: 'employee-secret',
+      installMode: 'hermes-gateway',
+    })
+  })
+
+  it('refreshes HMS gateway API key from hermes home after the manifest exists', async () => {
+    process.env.BEATYCLAW_HMS_INSTALL_MODE = 'hermes-gateway'
+    const target = employee('emp_hms_key_refresh')
+    const {
+      installEmployeeRuntime,
+      readEmployeeRuntimeInstallManifest,
+    } = await import('../../packages/server/src/services/agentic/employee-runtime-installer')
+
+    await expect(installEmployeeRuntime(target)).resolves.toMatchObject({ apiKey: '' })
+    await writeFile(
+      join(target.instanceRoot, 'config', 'hermes-home', '.env'),
+      'API_SERVER_KEY="employee-secret-after-start"\n',
+    )
+
+    await expect(readEmployeeRuntimeInstallManifest(target)).resolves.toMatchObject({
+      apiKey: 'employee-secret-after-start',
+      installMode: 'hermes-gateway',
     })
   })
 

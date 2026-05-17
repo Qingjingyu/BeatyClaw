@@ -12,6 +12,7 @@ export interface EmployeeRuntimeInstallManifest {
   startArgs: string[]
   env: Record<string, string>
   healthUrl: string
+  apiKey: string
   installedAt: string
   installMode: 'placeholder' | 'hermes-gateway' | 'custom'
 }
@@ -45,6 +46,19 @@ function splitArgs(raw: string): string[] {
     .split(' ')
     .map(part => part.trim())
     .filter(Boolean)
+}
+
+function readEnvApiKey(content: string): string {
+  const match = content.match(/^API_SERVER_KEY\s*=\s*"?([^"\n]+)"?/m)
+  return match?.[1]?.trim() || ''
+}
+
+async function readHermesApiKey(hermesHome: string): Promise<string> {
+  try {
+    return readEnvApiKey(await readFile(join(hermesHome, '.env'), 'utf-8'))
+  } catch {
+    return ''
+  }
 }
 
 function buildUrl(host: string, port: number): string {
@@ -124,6 +138,7 @@ async function installGenericRuntime(employee: Employee): Promise<EmployeeRuntim
     startArgs,
     env: {},
     healthUrl,
+    apiKey: '',
     installedAt: nowIso(),
     installMode: startArgs.length > 0 ? 'custom' : 'placeholder',
   })
@@ -153,6 +168,7 @@ async function installHmsRuntime(employee: Employee): Promise<EmployeeRuntimeIns
     startArgs,
     env: {},
     healthUrl,
+    apiKey: '',
     installedAt: nowIso(),
     installMode: configuredArgs.length > 0 ? 'custom' : 'placeholder',
   })
@@ -182,6 +198,7 @@ async function installHmsGatewayRuntime(employee: Employee, port: number, host: 
       YOYOO_WORKSPACE_ID: employee.id,
     },
     healthUrl,
+    apiKey: await readHermesApiKey(hermesHome),
     installedAt: nowIso(),
     installMode: 'hermes-gateway',
   })
@@ -196,7 +213,7 @@ async function writeInstallManifest(employee: Employee, manifest: EmployeeRuntim
 export async function readEmployeeRuntimeInstallManifest(employee: Employee): Promise<EmployeeRuntimeInstallManifest | null> {
   try {
     const parsed = JSON.parse(await readFile(getInstallManifestPath(employee), 'utf-8'))
-    return {
+    const manifest: EmployeeRuntimeInstallManifest = {
       employeeId: String(parsed.employeeId || parsed.employee_id || employee.id),
       engineType: String(parsed.engineType || parsed.engine_type || employee.engineType) as EmployeeEngineType,
       runtimeUrl: String(parsed.runtimeUrl || parsed.runtime_url || ''),
@@ -207,11 +224,16 @@ export async function readEmployeeRuntimeInstallManifest(employee: Employee): Pr
         ? Object.fromEntries(Object.entries(parsed.env).map(([key, value]) => [key, String(value)]))
         : {},
       healthUrl: String(parsed.healthUrl || parsed.health_url || ''),
+      apiKey: String(parsed.apiKey || parsed.api_key || ''),
       installedAt: String(parsed.installedAt || parsed.installed_at || ''),
       installMode: parsed.installMode === 'hermes-gateway' || parsed.install_mode === 'hermes-gateway'
         ? 'hermes-gateway'
         : (parsed.installMode === 'custom' || parsed.install_mode === 'custom' ? 'custom' : 'placeholder'),
     }
+    if (!manifest.apiKey && manifest.env.HERMES_HOME) {
+      manifest.apiKey = await readHermesApiKey(manifest.env.HERMES_HOME)
+    }
+    return manifest
   } catch {
     return null
   }
