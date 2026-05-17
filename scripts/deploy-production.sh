@@ -61,12 +61,20 @@ set_env_value() {
   local target_file="$1"
   local key="$2"
   local value="$3"
-  if grep -q "^${key}=" "$target_file"; then
-    sed -i.bak "s/^${key}=.*/${key}=${value}/" "$target_file"
-    rm -f "${target_file}.bak"
-  else
-    printf '%s=%s\n' "$key" "$value" >> "$target_file"
-  fi
+  local tmp_file="${target_file}.tmp"
+  awk -v key="$key" -v value="$value" '
+    BEGIN { replaced = 0 }
+    index($0, key "=") == 1 {
+      print key "=" value
+      replaced = 1
+      next
+    }
+    { print }
+    END {
+      if (!replaced) print key "=" value
+    }
+  ' "$target_file" > "$tmp_file"
+  mv "$tmp_file" "$target_file"
 }
 
 curl_public_health() {
