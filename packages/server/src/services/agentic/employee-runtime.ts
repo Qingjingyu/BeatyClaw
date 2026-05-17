@@ -1,6 +1,6 @@
 import { mkdir, open, readFile, writeFile } from 'fs/promises'
 import { join } from 'path'
-import { spawn, type ChildProcess } from 'child_process'
+import { spawn, spawnSync, type ChildProcess } from 'child_process'
 import type { Employee, EmployeeEngineType, EmployeeHealthStatus, EmployeeStatus } from './employees'
 import { installEmployeeRuntime, readEmployeeRuntimeInstallManifest } from './employee-runtime-installer'
 
@@ -13,7 +13,7 @@ export interface EmployeeRuntimeState {
   port: number | null
   containerName: string
   updatedAt: string
-  mode: 'local' | 'process'
+  mode: 'local' | 'process' | 'docker'
   pid: number | null
   lastError: string
   apiKey: string
@@ -66,7 +66,7 @@ export async function readEmployeeRuntimeState(employee: Employee): Promise<Empl
       port: parsed.port ?? employee.port,
       containerName: String(parsed.containerName || parsed.container_name || employee.containerName),
       updatedAt: String(parsed.updatedAt || parsed.updated_at || nowIso()),
-      mode: parsed.mode === 'process' ? 'process' : 'local',
+      mode: parsed.mode === 'docker' ? 'docker' : (parsed.mode === 'process' ? 'process' : 'local'),
       pid: typeof parsed.pid === 'number' ? parsed.pid : null,
       lastError: String(parsed.lastError || parsed.last_error || ''),
       apiKey: String(parsed.apiKey || parsed.api_key || ''),
@@ -154,6 +154,16 @@ interface ProcessRuntimeConfig {
   apiKey: string
 }
 
+interface DockerRuntimeConfig {
+  enabled: boolean
+  dockerBin: string
+  dockerArgsPrefix: string[]
+  image: string
+  port: number | null
+  healthUrl: string
+  env: Record<string, string>
+}
+
 const processRegistry = new Map<string, ChildProcess>()
 
 function envKey(engineType: EmployeeEngineType, suffix: string): string {
@@ -179,6 +189,28 @@ function getProcessRuntimeConfig(engineType: EmployeeEngineType): ProcessRuntime
     port: Number.isInteger(portValue) && portValue > 0 && portValue <= 65535 ? portValue : null,
     env: {},
     apiKey: '',
+  }
+}
+
+function runtimeMode(engineType: EmployeeEngineType): string {
+  return String(process.env[envKey(engineType, 'RUNTIME_MODE')] || '').trim().toLowerCase()
+}
+
+function getDockerRuntimeConfig(engineType: EmployeeEngineType): DockerRuntimeConfig {
+  const portValue = Number(process.env[envKey(engineType, 'PORT')] || '')
+  const port = Number.isInteger(portValue) && portValue > 0 && portValue <= 65535 ? portValue : null
+  const healthUrlKey = envKey(engineType, 'HEALTH_URL')
+  const healthUrl = Object.prototype.hasOwnProperty.call(process.env, healthUrlKey)
+    ? String(process.env[healthUrlKey] || '').trim()
+    : (port ? `http://127.0.0.1:${port}/health` : '')
+  return {
+    enabled: runtimeMode(engineType) === 'docker',
+    dockerBin: String(process.env.BEATYCLAW_DOCKER_BIN || 'docker').trim() || 'docker',
+    dockerArgsPrefix: splitCommandArgs(String(process.env.BEATYCLAW_DOCKER_ARGS_PREFIX || '')),
+    image: String(process.env[envKey(engineType, 'DOCKER_IMAGE')] || '').trim(),
+    port,
+    healthUrl,
+    env: {},
   }
 }
 
@@ -376,8 +408,147 @@ export class ProcessEmployeeRuntimeAdapter implements EmployeeRuntimeAdapter {
   }
 }
 
+export class DockerEmployeeRuntimeAdapter implements EmployeeRuntimeAdapter {
+  constructor(
+    private readonly engineType: EmployeeEngineType,
+    private readonly fallback = new ProcessEmployeeRuntimeAdapter(engineType),
+  ) {}
+
+  async deploy(employee: Employee): Promise<EmployeeRuntimeState> {
+    const config = getDockerRuntimeConfig(this.engineType)
+    if (!config.enabled) return this.fallback.deploy(employee)
+    if (!config.image) {
+      return updateRuntimeState(employee, {
+        status: 'failed',
+        healthStatus: 'unhealthy',
+        mode: 'docker',
+        pid: null,
+        lastError: `${envKey(this.engineType, 'DOCKER_IMAGE')} is required for docker runtime`,
+      })
+    }
+    return updateRuntimeState(employee, {
+      status: 'installed',
+      healthStatus: 'stopped',
+      runtimeUrl: config.healthUrl,
+      port: config.port,
+      mode: 'docker',
+      pid: null,
+      lastError: '',
+      logPath: join(employee.instanceRoot, 'logs', 'runtime.log'),
+    })
+  }
+
+  async start(employee: Employee): Promise<EmployeeRuntimeState> {
+    const config = getDockerRuntimeConfig(this.engineType)
+    if (!config.enabled) return this.fallback.start(employee)
+    if (!config.image) {
+      return updateRuntimeState(employee, {
+        status: 'failed',
+        healthStatus: 'unhealthy',
+        mode: 'docker',
+        pid: null,
+        lastError: `${envKey(this.engineType, 'DOCKER_IMAGE')} is required for docker runtime`,
+      })
+    }
+
+    await mkdir(join(employee.instanceRoot, 'logs'), { recursive: true })
+    const runArgs = [
+      ...config.dockerArgsPrefix,
+      'run',
+      '-d',
+      '--name',
+      employee.containerName,
+      '--restart',
+      'unless-stopped',
+      '-p',
+      `127.0.0.1:${config.port || 0}:${config.port || 0}`,
+      '-v',
+      `${employee.instanceRoot}:/home/agent/employee`,
+      '-e',
+      `BEATYCLAW_EMPLOYEE_ID=${employee.id}`,
+      '-e',
+      `BEATYCLAW_EMPLOYEE_ROOT=/home/agent/employee`,
+      '-e',
+      `BEATYCLAW_EMPLOYEE_ENGINE=${employee.engineType}`,
+      config.image,
+    ]
+    const rm = spawnSync(config.dockerBin, [...config.dockerArgsPrefix, 'rm', '-f', employee.containerName], { encoding: 'utf-8' })
+    if (rm.error) {
+      return updateRuntimeState(employee, {
+        status: 'failed',
+        healthStatus: 'unhealthy',
+        mode: 'docker',
+        pid: null,
+        lastError: rm.error.message,
+      })
+    }
+    const run = spawnSync(config.dockerBin, runArgs, { encoding: 'utf-8' })
+    if (run.error || run.status !== 0) {
+      return updateRuntimeState(employee, {
+        status: 'failed',
+        healthStatus: 'unhealthy',
+        runtimeUrl: config.healthUrl,
+        port: config.port,
+        mode: 'docker',
+        pid: null,
+        lastError: run.error?.message || run.stderr || run.stdout || 'Docker run failed',
+        logPath: join(employee.instanceRoot, 'logs', 'runtime.log'),
+      })
+    }
+    return updateRuntimeState(employee, {
+      status: 'running',
+      healthStatus: config.healthUrl ? 'unknown' : 'healthy',
+      runtimeUrl: config.healthUrl,
+      port: config.port,
+      mode: 'docker',
+      pid: null,
+      lastError: '',
+      logPath: join(employee.instanceRoot, 'logs', 'runtime.log'),
+    })
+  }
+
+  async stop(employee: Employee): Promise<EmployeeRuntimeState> {
+    const config = getDockerRuntimeConfig(this.engineType)
+    if (!config.enabled) return this.fallback.stop(employee)
+    const rm = spawnSync(config.dockerBin, [...config.dockerArgsPrefix, 'rm', '-f', employee.containerName], { encoding: 'utf-8' })
+    return updateRuntimeState(employee, {
+      status: rm.error ? 'failed' : 'stopped',
+      healthStatus: rm.error ? 'unhealthy' : 'stopped',
+      runtimeUrl: config.healthUrl,
+      port: config.port,
+      mode: 'docker',
+      pid: null,
+      lastError: rm.error?.message || '',
+      logPath: join(employee.instanceRoot, 'logs', 'runtime.log'),
+    })
+  }
+
+  async health(employee: Employee): Promise<EmployeeRuntimeState> {
+    const config = getDockerRuntimeConfig(this.engineType)
+    if (!config.enabled) return this.fallback.health(employee)
+    const inspect = spawnSync(
+      config.dockerBin,
+      [...config.dockerArgsPrefix, 'inspect', '-f', '{{.State.Running}}', employee.containerName],
+      { encoding: 'utf-8' },
+    )
+    const running = !inspect.error && inspect.status === 0 && inspect.stdout.trim() === 'true'
+    const healthy = running && await probeHealth(config.healthUrl)
+    return updateRuntimeState(employee, {
+      status: running ? 'running' : 'failed',
+      healthStatus: healthy ? 'healthy' : 'unhealthy',
+      runtimeUrl: config.healthUrl,
+      port: config.port,
+      mode: 'docker',
+      pid: null,
+      lastError: running ? (healthy ? '' : 'Health check failed') : (inspect.error?.message || inspect.stderr || 'Docker container is not running'),
+      logPath: join(employee.instanceRoot, 'logs', 'runtime.log'),
+    })
+  }
+}
+
 export function createEmployeeRuntimeAdapter(engineType: EmployeeEngineType): EmployeeRuntimeAdapter {
   if (engineType === 'hms' || engineType === 'openclaw' || engineType === 'coco') {
+    if (runtimeMode(engineType) === 'docker') return new DockerEmployeeRuntimeAdapter(engineType)
     return new ProcessEmployeeRuntimeAdapter(engineType)
   }
   return new LocalEmployeeRuntimeAdapter()

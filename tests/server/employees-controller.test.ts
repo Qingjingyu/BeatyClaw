@@ -12,6 +12,10 @@ describe('Employees controller', () => {
     process.env = {
       ...originalEnv,
       YOYOO_AUTH_HOME: authHome,
+      BEATYCLAW_HMS_RUNTIME_MODE: '',
+      BEATYCLAW_HMS_DOCKER_IMAGE: '',
+      BEATYCLAW_DOCKER_BIN: '',
+      BEATYCLAW_DOCKER_ARGS_PREFIX: '',
     }
   })
 

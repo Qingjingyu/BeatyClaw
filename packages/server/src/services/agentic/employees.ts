@@ -34,7 +34,7 @@ export interface EmployeeRuntimeInstance {
   port: number | null
   status: EmployeeStatus
   healthStatus: EmployeeHealthStatus
-  mode: 'local' | 'process'
+  mode: 'local' | 'process' | 'docker'
   pid: number | null
   lastError: string
   logPath: string
