@@ -619,6 +619,20 @@ BEATYCLAW_HMS_PORT_RANGE=4800-4899
 
 没有固定 `BEATYCLAW_HMS_PORT` 时，installer 会扫描同级员工的 `runtime-install.json`，从端口池里拿第一个未使用端口，避免多个员工抢同一个 runtime 端口。
 
+端口分配还会：
+
+- 检查 `127.0.0.1:{port}` 是否已被其他本机进程占用。
+- 使用 `.runtime-port-locks/{port}.lock` 做轻量锁，降低并发创建员工时抢同一端口的风险。
+
+服务器 Docker mode 冒烟：
+
+```bash
+cd /home/ubuntu/agent-stack/agentic-build-current
+./scripts/employee-docker-smoke.sh
+```
+
+该脚本使用当前 `agentic` 镜像启动一个临时员工容器，验证 Docker run / inspect / rm、目录挂载和本机端口绑定，不会修改正式员工数据。
+
 ## 关键目录
 
 ```text

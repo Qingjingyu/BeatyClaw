@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest'
 describe('runtime orchestration scripts', () => {
   const stackScript = readFileSync(join(process.cwd(), 'scripts/runtime-stack.sh'), 'utf8')
   const healthcheckScript = readFileSync(join(process.cwd(), 'scripts/runtime-healthcheck.sh'), 'utf8')
+  const employeeDockerSmokeScript = readFileSync(join(process.cwd(), 'scripts/employee-docker-smoke.sh'), 'utf8')
 
   it('starts worker-bot with the same BeatyClaw data mounts as the product container', () => {
     expect(stackScript).toContain('AGENTIC_HERMES_DIR="${AGENTIC_HERMES_DIR:-${DEPLOY_ROOT}/agentic-hermes}"')
@@ -28,5 +29,12 @@ describe('runtime orchestration scripts', () => {
     expect(healthcheckScript).toContain('AGENTIC_DEPLOY_VERIFY_EMAIL')
     expect(healthcheckScript).toContain('/api/hermes/runtime/diagnostics')
     expect(healthcheckScript).toContain('"status":"ok"')
+  })
+
+  it('provides a server smoke test for employee docker runtime containers', () => {
+    expect(employeeDockerSmokeScript).toContain('CONTAINER_NAME="${CONTAINER_NAME:-beautyclaw-employee-smoke}"')
+    expect(employeeDockerSmokeScript).toContain('-v "${SMOKE_ROOT}:/home/agent/employee"')
+    expect(employeeDockerSmokeScript).toContain("docker inspect -f '{{.State.Running}}'")
+    expect(employeeDockerSmokeScript).toContain('docker rm -f "$CONTAINER_NAME"')
   })
 })
