@@ -45,6 +45,7 @@ describe('Conversation Hub web history visibility', () => {
 
     const { createConversationHub } = await import('../../packages/server/src/services/agentic/conversation-hub')
     const hub = createConversationHub({
+      getConfiguredRuntimeProvider: () => 'zylos',
       createRuntimeAdapter: () => ({
         provider: 'zylos',
         sendMessage: async () => ({
@@ -104,6 +105,7 @@ describe('Conversation Hub web history visibility', () => {
 
     const { createConversationHub } = await import('../../packages/server/src/services/agentic/conversation-hub')
     const hub = createConversationHub({
+      getConfiguredRuntimeProvider: () => 'zylos',
       createRuntimeAdapter: () => ({
         provider: 'zylos',
         sendMessage: async () => ({

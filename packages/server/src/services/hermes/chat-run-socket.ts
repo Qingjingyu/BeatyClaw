@@ -520,7 +520,7 @@ export class ChatRunSocket {
     const agenticRuntime = getAgenticRuntimeTarget(model)
     const configuredRuntimeProvider = getConfiguredRuntimeProvider()
     const useConversationHubForWeb = Boolean(
-      session_id && (configuredRuntimeProvider === 'zylos' || configuredRuntimeProvider === 'openai-direct'),
+      session_id && (configuredRuntimeProvider === 'zylos' || configuredRuntimeProvider === 'openai-direct' || configuredRuntimeProvider === 'hms'),
     )
     const upstream = useConversationHubForWeb
       ? ''
