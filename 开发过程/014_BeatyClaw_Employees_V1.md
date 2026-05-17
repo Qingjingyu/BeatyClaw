@@ -47,7 +47,7 @@ Date: 2026-05-17
 - 默认员工 ID 固定为 `default`，便于后续把旧数据挂到默认员工。
 - 员工引擎类型先支持 `openclaw`、`hms`、`coco`、`zylos`。
 - 部署动作第一版是 mock：`draft -> installed`。
-- 现有聊天、任务、看板等数据暂未真正按 `employee_id` 隔离，本阶段只建立当前员工上下文入口。
+- 本阶段后来确认：不能把数字员工理解成共享系统里的 `employee_id` 隔离。正确方向是每个员工都是独立 Runtime Instance，`employee_id` 只用于 Control Plane 查找和路由。
 
 ## 验证
 

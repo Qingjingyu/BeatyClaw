@@ -15,4 +15,4 @@ Yoyoo0.1 采用 `hermes-web-ui` 作为第一版产品端底座，先保留原项
 - 入口层只负责识别用户、鉴权、附件接收和请求转发。
 - Yoyoo 产品层负责用户、多租户目录、运行管理、产品展示。
 - Hermes/HMS 作为可替换 AI 引擎，尽量保持原始能力，不在产品层预设智能行为。
-
+- BeatyClaw 是 Control Plane；数字员工是独立 Runtime Instance。不能只靠共享系统里的 `employee_id` 假装隔离，后续员工目录、配置、数据、日志和工作区都必须以实例为边界。
