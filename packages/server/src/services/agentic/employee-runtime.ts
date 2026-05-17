@@ -2,6 +2,7 @@ import { mkdir, readFile, writeFile } from 'fs/promises'
 import { join } from 'path'
 import { spawn, type ChildProcess } from 'child_process'
 import type { Employee, EmployeeEngineType, EmployeeHealthStatus, EmployeeStatus } from './employees'
+import { installEmployeeRuntime, readEmployeeRuntimeInstallManifest } from './employee-runtime-installer'
 
 export interface EmployeeRuntimeState {
   employeeId: string
@@ -167,6 +168,19 @@ function getProcessRuntimeConfig(engineType: EmployeeEngineType): ProcessRuntime
   }
 }
 
+async function getRuntimeLaunchConfig(employee: Employee, engineType: EmployeeEngineType): Promise<ProcessRuntimeConfig> {
+  const envConfig = getProcessRuntimeConfig(engineType)
+  const manifest = await readEmployeeRuntimeInstallManifest(employee)
+  if (!manifest) return envConfig
+  return {
+    enabled: true,
+    command: manifest.startCommand || envConfig.command,
+    args: manifest.startArgs.length > 0 ? manifest.startArgs : envConfig.args,
+    healthUrl: manifest.healthUrl || envConfig.healthUrl,
+    port: manifest.port || envConfig.port,
+  }
+}
+
 async function probeHealth(url: string): Promise<boolean> {
   if (!url) return true
   try {
@@ -184,13 +198,13 @@ export class ProcessEmployeeRuntimeAdapter implements EmployeeRuntimeAdapter {
   ) {}
 
   async deploy(employee: Employee): Promise<EmployeeRuntimeState> {
-    const config = getProcessRuntimeConfig(this.engineType)
-    if (!config.enabled) return this.fallback.deploy(employee)
+    const manifest = await installEmployeeRuntime(employee)
+    const config = await getRuntimeLaunchConfig(employee, this.engineType)
     return updateRuntimeState(employee, {
       status: 'installed',
       healthStatus: 'stopped',
-      runtimeUrl: config.healthUrl,
-      port: config.port,
+      runtimeUrl: manifest.runtimeUrl || config.healthUrl,
+      port: manifest.port || config.port,
       mode: 'process',
       pid: null,
       lastError: '',
@@ -198,7 +212,7 @@ export class ProcessEmployeeRuntimeAdapter implements EmployeeRuntimeAdapter {
   }
 
   async start(employee: Employee): Promise<EmployeeRuntimeState> {
-    const config = getProcessRuntimeConfig(this.engineType)
+    const config = await getRuntimeLaunchConfig(employee, this.engineType)
     if (!config.enabled) return this.fallback.start(employee)
 
     const existing = processRegistry.get(employee.id)
@@ -224,6 +238,7 @@ export class ProcessEmployeeRuntimeAdapter implements EmployeeRuntimeAdapter {
           BEATYCLAW_EMPLOYEE_ID: employee.id,
           BEATYCLAW_EMPLOYEE_ROOT: employee.instanceRoot,
           BEATYCLAW_EMPLOYEE_ENGINE: employee.engineType,
+          BEATYCLAW_HMS_PORT: config.port ? String(config.port) : '',
         },
       })
       child.unref()
@@ -251,7 +266,7 @@ export class ProcessEmployeeRuntimeAdapter implements EmployeeRuntimeAdapter {
   }
 
   async stop(employee: Employee): Promise<EmployeeRuntimeState> {
-    const config = getProcessRuntimeConfig(this.engineType)
+    const config = await getRuntimeLaunchConfig(employee, this.engineType)
     if (!config.enabled) return this.fallback.stop(employee)
 
     const child = processRegistry.get(employee.id)
@@ -269,7 +284,7 @@ export class ProcessEmployeeRuntimeAdapter implements EmployeeRuntimeAdapter {
   }
 
   async health(employee: Employee): Promise<EmployeeRuntimeState> {
-    const config = getProcessRuntimeConfig(this.engineType)
+    const config = await getRuntimeLaunchConfig(employee, this.engineType)
     if (!config.enabled) return this.fallback.health(employee)
 
     const state = await readRuntimeState(employee)

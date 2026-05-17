@@ -35,12 +35,12 @@ describe('Employee process runtime adapter', () => {
     }
   }
 
-  it('falls back to local runtime when process config is not enabled', async () => {
+  it('installs an HMS process runtime when deploy runs without explicit config', async () => {
     const { createEmployeeRuntimeAdapter } = await import('../../packages/server/src/services/agentic/employee-runtime')
 
     const state = await createEmployeeRuntimeAdapter('hms').deploy(employee())
 
-    expect(state).toMatchObject({ mode: 'local', status: 'installed', healthStatus: 'stopped' })
+    expect(state).toMatchObject({ mode: 'process', status: 'installed', healthStatus: 'stopped' })
   })
 
   it('writes process runtime state when engine command config is enabled', async () => {
@@ -55,7 +55,7 @@ describe('Employee process runtime adapter', () => {
     const target = employee()
 
     await expect(adapter.deploy(target)).resolves.toMatchObject({ mode: 'process', status: 'installed', port: 4567 })
-    await expect(adapter.start(target)).resolves.toMatchObject({ mode: 'process', status: 'running', healthStatus: 'healthy', port: 4567 })
+    await expect(adapter.start(target)).resolves.toMatchObject({ mode: 'process', status: 'running', port: 4567 })
     await expect(adapter.stop(target)).resolves.toMatchObject({ mode: 'process', status: 'stopped', healthStatus: 'stopped', pid: null })
 
     expect(JSON.parse(await readFile(getRuntimeStatePath(target), 'utf-8'))).toMatchObject({

@@ -20,6 +20,16 @@ describe('Employees service', () => {
     await rm(authHome, { recursive: true, force: true })
   })
 
+  async function waitForHealthy(service: typeof import('../../packages/server/src/services/agentic/employees'), id: string) {
+    let latest
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      latest = await service.checkEmployeeHealth(id)
+      if (latest.employee.healthStatus === 'healthy') return latest
+      await new Promise(resolve => setTimeout(resolve, 80))
+    }
+    return latest
+  }
+
   it('seeds the default employee and selects it as current', async () => {
     const service = await import('../../packages/server/src/services/agentic/employees')
 
@@ -78,18 +88,17 @@ describe('Employees service', () => {
       engineType: 'hms',
       status: 'installed',
       healthStatus: 'stopped',
-      mode: 'local',
+      mode: 'process',
       pid: null,
       lastError: '',
     })
 
-    expect(await service.startEmployee(employee.id)).toMatchObject({ id: employee.id, status: 'running', healthStatus: 'healthy' })
+    expect(await service.startEmployee(employee.id)).toMatchObject({ id: employee.id, status: 'running' })
     expect(JSON.parse(await readFile(join(employee.instanceRoot, 'config', 'runtime-state.json'), 'utf-8'))).toMatchObject({
       status: 'running',
-      healthStatus: 'healthy',
     })
 
-    expect(await service.checkEmployeeHealth(employee.id)).toMatchObject({
+    expect(await waitForHealthy(service, employee.id)).toMatchObject({
       employee: { id: employee.id, status: 'running', healthStatus: 'healthy' },
       runtime: { employeeId: employee.id, status: 'running', healthStatus: 'healthy' },
     })

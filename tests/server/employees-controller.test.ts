@@ -20,6 +20,17 @@ describe('Employees controller', () => {
     await rm(authHome, { recursive: true, force: true })
   })
 
+  async function waitForHealthy(ctrl: typeof import('../../packages/server/src/controllers/agentic/employees'), id: string) {
+    let ctx: any = { params: { id } }
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      ctx = { params: { id } }
+      await ctrl.health(ctx)
+      if (ctx.body?.employee?.healthStatus === 'healthy') return ctx
+      await new Promise(resolve => setTimeout(resolve, 80))
+    }
+    return ctx
+  }
+
   it('returns the employee list with the current employee', async () => {
     const ctrl = await import('../../packages/server/src/controllers/agentic/employees')
     const ctx: any = {}
@@ -80,8 +91,7 @@ describe('Employees controller', () => {
     await ctrl.deploy({ params: { id: createCtx.body.id } } as any)
     await ctrl.start({ params: { id: createCtx.body.id } } as any)
 
-    const healthCtx: any = { params: { id: createCtx.body.id } }
-    await ctrl.health(healthCtx)
+    const healthCtx = await waitForHealthy(ctrl, createCtx.body.id)
 
     expect(healthCtx.body).toMatchObject({
       employee: {
