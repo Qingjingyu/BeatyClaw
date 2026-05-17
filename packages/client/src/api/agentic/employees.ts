@@ -24,6 +24,7 @@ export interface EmployeeRuntimeInstance {
   mode: 'local' | 'process'
   pid: number | null
   lastError: string
+  logPath: string
   installMode: 'none' | 'placeholder' | 'hermes-gateway' | 'custom'
   installedAt: string
   updatedAt: string
@@ -67,6 +68,7 @@ export interface EmployeeHealthCheckResponse {
     mode: 'local' | 'process'
     pid: number | null
     lastError: string
+    logPath: string
   }
 }
 

@@ -154,6 +154,7 @@ async function writeHmsPlaceholderLauncher(employee: Employee, port: number): Pr
     [
       "import http from 'node:http'",
       `const port = Number(process.env.BEATYCLAW_HMS_PORT || ${port})`,
+      "console.log(JSON.stringify({ event: 'runtime_started', engine: 'hms', employeeId: process.env.BEATYCLAW_EMPLOYEE_ID || '', port }))",
       "const server = http.createServer((req, res) => {",
       "  if (req.url === '/health') {",
       "    res.writeHead(200, { 'content-type': 'application/json' })",
@@ -183,6 +184,7 @@ async function writeGenericPlaceholderLauncher(employee: Employee, port: number)
       "import http from 'node:http'",
       `const port = ${port}`,
       `const engine = ${JSON.stringify(employee.engineType)}`,
+      "console.log(JSON.stringify({ event: 'runtime_started', engine, employeeId: process.env.BEATYCLAW_EMPLOYEE_ID || '', port }))",
       "const server = http.createServer((req, res) => {",
       "  if (req.url === '/health') {",
       "    res.writeHead(200, { 'content-type': 'application/json' })",

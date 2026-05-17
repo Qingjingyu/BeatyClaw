@@ -37,6 +37,7 @@ export interface EmployeeRuntimeInstance {
   mode: 'local' | 'process'
   pid: number | null
   lastError: string
+  logPath: string
   installMode: 'none' | 'placeholder' | 'hermes-gateway' | 'custom'
   installedAt: string
   updatedAt: string
@@ -284,6 +285,7 @@ async function buildEmployeeRuntimeInstance(employee: Employee): Promise<Employe
     mode: runtimeState.mode,
     pid: runtimeState.pid,
     lastError: runtimeState.lastError,
+    logPath: runtimeState.logPath,
     installMode: installManifest?.installMode || 'none',
     installedAt: installManifest?.installedAt || '',
     updatedAt: nowIso(),
@@ -306,6 +308,7 @@ async function buildEmployeeRuntimeInstance(employee: Employee): Promise<Employe
       status: runtimeInstance.status,
       healthStatus: runtimeInstance.healthStatus,
       mode: runtimeInstance.mode,
+      logPath: runtimeInstance.logPath,
       installMode: runtimeInstance.installMode,
       installedAt: runtimeInstance.installedAt,
       updatedAt: runtimeInstance.updatedAt,

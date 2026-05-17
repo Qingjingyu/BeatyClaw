@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from 'fs/promises'
+import { mkdir, open, readFile, writeFile } from 'fs/promises'
 import { join } from 'path'
 import { spawn, type ChildProcess } from 'child_process'
 import type { Employee, EmployeeEngineType, EmployeeHealthStatus, EmployeeStatus } from './employees'
@@ -17,6 +17,7 @@ export interface EmployeeRuntimeState {
   pid: number | null
   lastError: string
   apiKey: string
+  logPath: string
 }
 
 export interface EmployeeRuntimeAdapter {
@@ -48,6 +49,7 @@ function defaultRuntimeState(employee: Employee): EmployeeRuntimeState {
     pid: null,
     lastError: '',
     apiKey: '',
+    logPath: join(employee.instanceRoot, 'logs', 'runtime.log'),
   }
 }
 
@@ -68,6 +70,7 @@ export async function readEmployeeRuntimeState(employee: Employee): Promise<Empl
       pid: typeof parsed.pid === 'number' ? parsed.pid : null,
       lastError: String(parsed.lastError || parsed.last_error || ''),
       apiKey: String(parsed.apiKey || parsed.api_key || ''),
+      logPath: String(parsed.logPath || parsed.log_path || join(employee.instanceRoot, 'logs', 'runtime.log')),
     }
   } catch {
     return defaultRuntimeState(employee)
@@ -88,6 +91,7 @@ async function updateRuntimeState(employee: Employee, patch: Partial<EmployeeRun
     employeeId: employee.id,
     engineType: employee.engineType,
     containerName: employee.containerName,
+    logPath: patch.logPath || previous.logPath || join(employee.instanceRoot, 'logs', 'runtime.log'),
     updatedAt: nowIso(),
   })
 }
@@ -203,6 +207,27 @@ async function probeHealth(url: string): Promise<boolean> {
   }
 }
 
+function pidIsAlive(pid: number | null): boolean {
+  if (!pid) return false
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch {
+    return false
+  }
+}
+
+async function openRuntimeLog(employee: Employee): Promise<{ fd: number; close: () => Promise<void>; logPath: string }> {
+  await mkdir(join(employee.instanceRoot, 'logs'), { recursive: true })
+  const logPath = join(employee.instanceRoot, 'logs', 'runtime.log')
+  const handle = await open(logPath, 'a')
+  return {
+    fd: handle.fd,
+    close: () => handle.close(),
+    logPath,
+  }
+}
+
 export class ProcessEmployeeRuntimeAdapter implements EmployeeRuntimeAdapter {
   constructor(
     private readonly engineType: EmployeeEngineType,
@@ -221,6 +246,7 @@ export class ProcessEmployeeRuntimeAdapter implements EmployeeRuntimeAdapter {
       pid: null,
       lastError: '',
       apiKey: manifest.apiKey || config.apiKey,
+      logPath: join(employee.instanceRoot, 'logs', 'runtime.log'),
     })
   }
 
@@ -239,14 +265,16 @@ export class ProcessEmployeeRuntimeAdapter implements EmployeeRuntimeAdapter {
         pid: existing.pid || null,
         lastError: '',
         apiKey: config.apiKey,
+        logPath: join(employee.instanceRoot, 'logs', 'runtime.log'),
       })
     }
 
     try {
+      const runtimeLog = await openRuntimeLog(employee)
       const child = spawn(config.command, config.args, {
         cwd: employee.instanceRoot,
         detached: true,
-        stdio: 'ignore',
+        stdio: ['ignore', runtimeLog.fd, runtimeLog.fd],
         env: {
           ...process.env,
           ...config.env,
@@ -256,6 +284,7 @@ export class ProcessEmployeeRuntimeAdapter implements EmployeeRuntimeAdapter {
           BEATYCLAW_HMS_PORT: config.port ? String(config.port) : '',
         },
       })
+      child.on('close', () => runtimeLog.close().catch(() => {}))
       child.unref()
       processRegistry.set(employee.id, child)
       return updateRuntimeState(employee, {
@@ -267,6 +296,7 @@ export class ProcessEmployeeRuntimeAdapter implements EmployeeRuntimeAdapter {
         pid: child.pid || null,
         lastError: '',
         apiKey: config.apiKey,
+        logPath: runtimeLog.logPath,
       })
     } catch (err) {
       return updateRuntimeState(employee, {
@@ -278,6 +308,7 @@ export class ProcessEmployeeRuntimeAdapter implements EmployeeRuntimeAdapter {
         pid: null,
         lastError: err instanceof Error ? err.message : String(err),
         apiKey: config.apiKey,
+        logPath: join(employee.instanceRoot, 'logs', 'runtime.log'),
       })
     }
   }
@@ -298,6 +329,7 @@ export class ProcessEmployeeRuntimeAdapter implements EmployeeRuntimeAdapter {
       pid: null,
       lastError: '',
       apiKey: config.apiKey,
+      logPath: join(employee.instanceRoot, 'logs', 'runtime.log'),
     })
   }
 
@@ -312,18 +344,22 @@ export class ProcessEmployeeRuntimeAdapter implements EmployeeRuntimeAdapter {
         healthStatus: state.status === 'stopped' || state.status === 'installed' ? 'stopped' : 'unknown',
         mode: 'process',
         apiKey: config.apiKey,
+        logPath: state.logPath,
       })
     }
 
-    const healthy = await probeHealth(config.healthUrl)
+    const alive = pidIsAlive(state.pid)
+    const healthy = alive && await probeHealth(config.healthUrl)
     return updateRuntimeState(employee, {
-      status: 'running',
+      status: alive ? 'running' : 'failed',
       healthStatus: healthy ? 'healthy' : 'unhealthy',
       runtimeUrl: config.healthUrl,
       port: config.port,
       mode: 'process',
-      lastError: healthy ? '' : 'Health check failed',
+      pid: alive ? state.pid : null,
+      lastError: healthy ? '' : (alive ? 'Health check failed' : 'Runtime process is not running'),
       apiKey: config.apiKey,
+      logPath: state.logPath,
     })
   }
 }
