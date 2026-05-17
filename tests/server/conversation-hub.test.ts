@@ -163,7 +163,7 @@ describe('Conversation Hub', () => {
 
     const result = await hub.receiveMessage({ channel: 'weixin', externalUserId: 'wx-user-1', text: '你好' })
 
-    expect(requestedProviders).toEqual(['openai-direct'])
+    expect(requestedProviders).toEqual(['openai-direct', 'openai-direct'])
     expect(result.runtimeProvider).toBe('openai-direct')
     expect(result.replyText).toBe('direct reply')
   })
@@ -180,6 +180,13 @@ describe('Conversation Hub', () => {
       },
       updateSessionStats: vi.fn(),
       updateUsage: vi.fn(),
+      getCurrentEmployee: async () => ({
+        id: 'emp_hms',
+        name: 'HMS 员工',
+        engineType: 'hms',
+        status: 'running',
+        healthStatus: 'healthy',
+      } as any),
       createRuntimeAdapter: (provider) => ({
         provider,
         sendMessage: async () => ({
@@ -205,6 +212,56 @@ describe('Conversation Hub', () => {
       runtime_run_id: 'hms_run_1',
       status: 'ok',
     })
+  })
+
+  it('falls back to COCO runtime when deployment is configured as HMS but the current employee is OpenClaw', async () => {
+    process.env = {
+      ...originalEnv,
+      BEATYCLAW_RUNTIME_PROVIDER: 'hms',
+      AGENTIC_HXA_RUNTIME_ENABLED: '1',
+      AGENTIC_HXA_TOKEN: 'test-token',
+    }
+    const requestedProviders: BeatyClawRuntimeProvider[] = []
+    const hub = createConversationHub({
+      getSession: () => null,
+      createSession: (data) => data as any,
+      addMessage: vi.fn(),
+      updateSessionStats: vi.fn(),
+      updateUsage: vi.fn(),
+      getCurrentEmployee: async () => ({
+        id: 'emp_openclaw',
+        name: 'OpenClaw 员工',
+        engineType: 'openclaw',
+        status: 'running',
+        healthStatus: 'healthy',
+      } as any),
+      createRuntimeAdapter: (provider) => {
+        requestedProviders.push(provider)
+        return {
+          provider,
+          sendMessage: async () => ({
+            id: 'hxa_run_1',
+            provider,
+            model: 'hxa:zylos-main',
+            outputText: 'COCO 兜底回复',
+          }),
+          getStatus: () => ({
+            provider,
+            available: provider === 'zylos',
+            mode: provider === 'zylos' ? 'active' : 'unsupported',
+          }),
+        }
+      },
+      countTokens: () => 1,
+      nowSeconds: () => 1778933000,
+      logger: { warn: vi.fn() },
+    })
+
+    const result = await hub.receiveMessage({ channel: 'web', externalUserId: 'web-user-1', text: '你好' })
+
+    expect(requestedProviders).toEqual(['zylos', 'zylos'])
+    expect(result.runtimeProvider).toBe('zylos')
+    expect(result.replyText).toBe('COCO 兜底回复')
   })
 
   it('stores inbound messages but does not call a runtime when no AI engine is installed', async () => {

@@ -7,6 +7,7 @@ import {
 } from '../../db/hermes/session-store'
 import { updateUsage } from '../../db/hermes/usage-store'
 import { countTokens } from '../../lib/context-compressor'
+import { getCurrentEmployee, type Employee } from './employees'
 import {
   createRuntimeAdapter,
   getConfiguredRuntimeProvider,
@@ -56,6 +57,7 @@ interface ConversationHubDeps {
   updateUsage: typeof updateUsage
   createRuntimeAdapter: typeof createRuntimeAdapter
   getConfiguredRuntimeProvider: typeof getConfiguredRuntimeProvider
+  getCurrentEmployee: typeof getCurrentEmployee
   countTokens: typeof countTokens
   nowSeconds: () => number
   logger: Pick<typeof logger, 'warn'>
@@ -80,9 +82,50 @@ const defaultDeps: ConversationHubDeps = {
   updateUsage,
   createRuntimeAdapter,
   getConfiguredRuntimeProvider,
+  getCurrentEmployee,
   countTokens,
   nowSeconds: () => Math.floor(Date.now() / 1000),
   logger,
+}
+
+function runtimeProviderFromEmployee(employee: Employee | null): BeatyClawRuntimeProvider | null {
+  if (!employee || employee.status !== 'running' || employee.healthStatus !== 'healthy') return null
+  if (employee.engineType === 'hms') return 'hms'
+  if (employee.engineType === 'zylos' || employee.engineType === 'coco') return 'zylos'
+  return null
+}
+
+async function resolveRuntimeProvider(
+  input: ConversationHubMessageInput,
+  deps: ConversationHubDeps,
+): Promise<BeatyClawRuntimeProvider> {
+  if (input.runtimeProvider) return input.runtimeProvider
+
+  const configured = deps.getConfiguredRuntimeProvider()
+  let employeeProvider: BeatyClawRuntimeProvider | null = null
+  try {
+    employeeProvider = runtimeProviderFromEmployee(await deps.getCurrentEmployee())
+  } catch (err) {
+    deps.logger.warn({ err }, '[conversation-hub] failed to resolve current employee runtime')
+  }
+
+  if (employeeProvider === configured) return configured
+  if (employeeProvider && configured === 'none') return employeeProvider
+  if (configured === 'none') return 'none'
+  if (configured === 'hms' && employeeProvider !== 'hms') {
+    const zylosRuntime = deps.createRuntimeAdapter('zylos')
+    return zylosRuntime.getStatus().available ? 'zylos' : configured
+  }
+
+  const configuredRuntime = deps.createRuntimeAdapter(configured)
+  if (configuredRuntime.getStatus().available) return configured
+
+  if (employeeProvider) return employeeProvider
+
+  const zylosRuntime = deps.createRuntimeAdapter('zylos')
+  if (zylosRuntime.getStatus().available) return 'zylos'
+
+  return configured
 }
 
 function stableSessionId(channel: string, externalUserId: string): string {
@@ -129,7 +172,7 @@ export function createConversationHub(deps: Partial<ConversationHubDeps> = {}) {
   return {
     async receiveMessage(input: ConversationHubMessageInput): Promise<ConversationHubMessageResult> {
       const profile = input.profile || 'default'
-      const runtimeProvider = input.runtimeProvider || d.getConfiguredRuntimeProvider()
+      const runtimeProvider = await resolveRuntimeProvider(input, d)
       const sessionId = input.sessionId || stableSessionId(input.channel, input.externalUserId)
       const now = d.nowSeconds()
 
