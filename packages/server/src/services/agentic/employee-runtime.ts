@@ -1,5 +1,6 @@
 import { mkdir, readFile, writeFile } from 'fs/promises'
 import { join } from 'path'
+import { spawn, type ChildProcess } from 'child_process'
 import type { Employee, EmployeeEngineType, EmployeeHealthStatus, EmployeeStatus } from './employees'
 
 export interface EmployeeRuntimeState {
@@ -11,6 +12,9 @@ export interface EmployeeRuntimeState {
   port: number | null
   containerName: string
   updatedAt: string
+  mode: 'local' | 'process'
+  pid: number | null
+  lastError: string
 }
 
 export interface EmployeeRuntimeAdapter {
@@ -38,6 +42,9 @@ function defaultRuntimeState(employee: Employee): EmployeeRuntimeState {
     port: employee.port,
     containerName: employee.containerName,
     updatedAt: nowIso(),
+    mode: 'local',
+    pid: null,
+    lastError: '',
   }
 }
 
@@ -54,6 +61,9 @@ async function readRuntimeState(employee: Employee): Promise<EmployeeRuntimeStat
       port: parsed.port ?? employee.port,
       containerName: String(parsed.containerName || parsed.container_name || employee.containerName),
       updatedAt: String(parsed.updatedAt || parsed.updated_at || nowIso()),
+      mode: parsed.mode === 'process' ? 'process' : 'local',
+      pid: typeof parsed.pid === 'number' ? parsed.pid : null,
+      lastError: String(parsed.lastError || parsed.last_error || ''),
     }
   } catch {
     return defaultRuntimeState(employee)
@@ -85,6 +95,9 @@ export class LocalEmployeeRuntimeAdapter implements EmployeeRuntimeAdapter {
       healthStatus: 'stopped',
       runtimeUrl: '',
       port: null,
+      mode: 'local',
+      pid: null,
+      lastError: '',
     })
   }
 
@@ -92,6 +105,9 @@ export class LocalEmployeeRuntimeAdapter implements EmployeeRuntimeAdapter {
     return updateRuntimeState(employee, {
       status: 'running',
       healthStatus: 'healthy',
+      mode: 'local',
+      pid: null,
+      lastError: '',
     })
   }
 
@@ -99,6 +115,9 @@ export class LocalEmployeeRuntimeAdapter implements EmployeeRuntimeAdapter {
     return updateRuntimeState(employee, {
       status: 'stopped',
       healthStatus: 'stopped',
+      mode: 'local',
+      pid: null,
+      lastError: '',
     })
   }
 
@@ -114,6 +133,169 @@ export class LocalEmployeeRuntimeAdapter implements EmployeeRuntimeAdapter {
   }
 }
 
-export function createEmployeeRuntimeAdapter(_engineType: EmployeeEngineType): EmployeeRuntimeAdapter {
+interface ProcessRuntimeConfig {
+  enabled: boolean
+  command: string
+  args: string[]
+  healthUrl: string
+  port: number | null
+}
+
+const processRegistry = new Map<string, ChildProcess>()
+
+function envKey(engineType: EmployeeEngineType, suffix: string): string {
+  return `BEATYCLAW_${engineType.toUpperCase()}_${suffix}`
+}
+
+function splitCommandArgs(raw: string): string[] {
+  return raw
+    .split(' ')
+    .map(part => part.trim())
+    .filter(Boolean)
+}
+
+function getProcessRuntimeConfig(engineType: EmployeeEngineType): ProcessRuntimeConfig {
+  const command = String(process.env[envKey(engineType, 'START_COMMAND')] || '').trim()
+  const healthUrl = String(process.env[envKey(engineType, 'HEALTH_URL')] || '').trim()
+  const portValue = Number(process.env[envKey(engineType, 'PORT')] || '')
+  return {
+    enabled: process.env[envKey(engineType, 'ENABLED')] === '1' && Boolean(command),
+    command,
+    args: splitCommandArgs(String(process.env[envKey(engineType, 'START_ARGS')] || '')),
+    healthUrl,
+    port: Number.isInteger(portValue) && portValue > 0 && portValue <= 65535 ? portValue : null,
+  }
+}
+
+async function probeHealth(url: string): Promise<boolean> {
+  if (!url) return true
+  try {
+    const response = await fetch(url, { method: 'GET' })
+    return response.ok
+  } catch {
+    return false
+  }
+}
+
+export class ProcessEmployeeRuntimeAdapter implements EmployeeRuntimeAdapter {
+  constructor(
+    private readonly engineType: EmployeeEngineType,
+    private readonly fallback = new LocalEmployeeRuntimeAdapter(),
+  ) {}
+
+  async deploy(employee: Employee): Promise<EmployeeRuntimeState> {
+    const config = getProcessRuntimeConfig(this.engineType)
+    if (!config.enabled) return this.fallback.deploy(employee)
+    return updateRuntimeState(employee, {
+      status: 'installed',
+      healthStatus: 'stopped',
+      runtimeUrl: config.healthUrl,
+      port: config.port,
+      mode: 'process',
+      pid: null,
+      lastError: '',
+    })
+  }
+
+  async start(employee: Employee): Promise<EmployeeRuntimeState> {
+    const config = getProcessRuntimeConfig(this.engineType)
+    if (!config.enabled) return this.fallback.start(employee)
+
+    const existing = processRegistry.get(employee.id)
+    if (existing && existing.exitCode === null) {
+      return updateRuntimeState(employee, {
+        status: 'running',
+        healthStatus: 'healthy',
+        runtimeUrl: config.healthUrl,
+        port: config.port,
+        mode: 'process',
+        pid: existing.pid || null,
+        lastError: '',
+      })
+    }
+
+    try {
+      const child = spawn(config.command, config.args, {
+        cwd: employee.instanceRoot,
+        detached: true,
+        stdio: 'ignore',
+        env: {
+          ...process.env,
+          BEATYCLAW_EMPLOYEE_ID: employee.id,
+          BEATYCLAW_EMPLOYEE_ROOT: employee.instanceRoot,
+          BEATYCLAW_EMPLOYEE_ENGINE: employee.engineType,
+        },
+      })
+      child.unref()
+      processRegistry.set(employee.id, child)
+      return updateRuntimeState(employee, {
+        status: 'running',
+        healthStatus: config.healthUrl ? 'unknown' : 'healthy',
+        runtimeUrl: config.healthUrl,
+        port: config.port,
+        mode: 'process',
+        pid: child.pid || null,
+        lastError: '',
+      })
+    } catch (err) {
+      return updateRuntimeState(employee, {
+        status: 'failed',
+        healthStatus: 'unhealthy',
+        runtimeUrl: config.healthUrl,
+        port: config.port,
+        mode: 'process',
+        pid: null,
+        lastError: err instanceof Error ? err.message : String(err),
+      })
+    }
+  }
+
+  async stop(employee: Employee): Promise<EmployeeRuntimeState> {
+    const config = getProcessRuntimeConfig(this.engineType)
+    if (!config.enabled) return this.fallback.stop(employee)
+
+    const child = processRegistry.get(employee.id)
+    if (child && child.exitCode === null) child.kill('SIGTERM')
+    processRegistry.delete(employee.id)
+    return updateRuntimeState(employee, {
+      status: 'stopped',
+      healthStatus: 'stopped',
+      runtimeUrl: config.healthUrl,
+      port: config.port,
+      mode: 'process',
+      pid: null,
+      lastError: '',
+    })
+  }
+
+  async health(employee: Employee): Promise<EmployeeRuntimeState> {
+    const config = getProcessRuntimeConfig(this.engineType)
+    if (!config.enabled) return this.fallback.health(employee)
+
+    const state = await readRuntimeState(employee)
+    if (state.status !== 'running') {
+      return updateRuntimeState(employee, {
+        status: state.status,
+        healthStatus: state.status === 'stopped' || state.status === 'installed' ? 'stopped' : 'unknown',
+        mode: 'process',
+      })
+    }
+
+    const healthy = await probeHealth(config.healthUrl)
+    return updateRuntimeState(employee, {
+      status: 'running',
+      healthStatus: healthy ? 'healthy' : 'unhealthy',
+      runtimeUrl: config.healthUrl,
+      port: config.port,
+      mode: 'process',
+      lastError: healthy ? '' : 'Health check failed',
+    })
+  }
+}
+
+export function createEmployeeRuntimeAdapter(engineType: EmployeeEngineType): EmployeeRuntimeAdapter {
+  if (engineType === 'hms' || engineType === 'openclaw' || engineType === 'coco') {
+    return new ProcessEmployeeRuntimeAdapter(engineType)
+  }
   return new LocalEmployeeRuntimeAdapter()
 }

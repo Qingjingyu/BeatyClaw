@@ -36,6 +36,9 @@ export interface EmployeeHealthCheckResponse {
     port: number | null
     containerName: string
     updatedAt: string
+    mode: 'local' | 'process'
+    pid: number | null
+    lastError: string
   }
 }
 

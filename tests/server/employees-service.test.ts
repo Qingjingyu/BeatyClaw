@@ -78,6 +78,9 @@ describe('Employees service', () => {
       engineType: 'hms',
       status: 'installed',
       healthStatus: 'stopped',
+      mode: 'local',
+      pid: null,
+      lastError: '',
     })
 
     expect(await service.startEmployee(employee.id)).toMatchObject({ id: employee.id, status: 'running', healthStatus: 'healthy' })
