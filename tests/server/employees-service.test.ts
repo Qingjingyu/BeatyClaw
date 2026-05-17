@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { mkdtemp, rm, stat } from 'fs/promises'
+import { mkdtemp, readFile, rm, stat } from 'fs/promises'
 import { tmpdir } from 'os'
 import { join } from 'path'
 
@@ -73,7 +73,28 @@ describe('Employees service', () => {
     expect((await service.getCurrentEmployee()).id).toBe(employee.id)
 
     expect(await service.deployEmployee(employee.id)).toMatchObject({ id: employee.id, status: 'installed', healthStatus: 'stopped' })
+    expect(JSON.parse(await readFile(join(employee.instanceRoot, 'config', 'runtime-state.json'), 'utf-8'))).toMatchObject({
+      employeeId: employee.id,
+      engineType: 'hms',
+      status: 'installed',
+      healthStatus: 'stopped',
+    })
+
     expect(await service.startEmployee(employee.id)).toMatchObject({ id: employee.id, status: 'running', healthStatus: 'healthy' })
+    expect(JSON.parse(await readFile(join(employee.instanceRoot, 'config', 'runtime-state.json'), 'utf-8'))).toMatchObject({
+      status: 'running',
+      healthStatus: 'healthy',
+    })
+
+    expect(await service.checkEmployeeHealth(employee.id)).toMatchObject({
+      employee: { id: employee.id, status: 'running', healthStatus: 'healthy' },
+      runtime: { employeeId: employee.id, status: 'running', healthStatus: 'healthy' },
+    })
+
     expect(await service.stopEmployee(employee.id)).toMatchObject({ id: employee.id, status: 'stopped', healthStatus: 'stopped' })
+    expect(JSON.parse(await readFile(join(employee.instanceRoot, 'config', 'runtime-state.json'), 'utf-8'))).toMatchObject({
+      status: 'stopped',
+      healthStatus: 'stopped',
+    })
   })
 })

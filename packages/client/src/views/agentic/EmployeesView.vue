@@ -94,6 +94,11 @@ async function start(employee: Employee) {
 async function stop(employee: Employee) {
   await employeesStore.stopEmployee(employee.id)
 }
+
+async function checkHealth(employee: Employee) {
+  await employeesStore.checkEmployeeHealth(employee.id)
+  message.success(`${employee.name} 健康状态已刷新`)
+}
 </script>
 
 <template>
@@ -174,6 +179,9 @@ async function stop(employee: Employee) {
             </NButton>
             <NButton v-else-if="employee.status === 'running'" size="small" @click="stop(employee)">
               停止
+            </NButton>
+            <NButton size="small" quaternary @click="checkHealth(employee)">
+              刷新健康
             </NButton>
           </div>
         </article>

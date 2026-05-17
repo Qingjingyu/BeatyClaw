@@ -2,6 +2,7 @@ import { mkdir, readFile, writeFile } from 'fs/promises'
 import { join } from 'path'
 import { homedir } from 'os'
 import { randomBytes } from 'node:crypto'
+import { createEmployeeRuntimeAdapter, type EmployeeRuntimeState } from './employee-runtime'
 
 export type EmployeeStatus = 'draft' | 'deploying' | 'installed' | 'running' | 'stopped' | 'failed'
 export type EmployeeHealthStatus = 'unknown' | 'provisioning' | 'healthy' | 'stopped' | 'unhealthy'
@@ -44,6 +45,11 @@ export interface UpdateEmployeeInput {
   healthStatus?: EmployeeHealthStatus
   runtimeUrl?: string
   port?: number | null
+}
+
+export interface EmployeeHealthCheckResult {
+  employee: Employee
+  runtime: EmployeeRuntimeState
 }
 
 const DEFAULT_EMPLOYEE_ID = 'default'
@@ -263,14 +269,46 @@ export async function selectEmployee(id: string): Promise<EmployeeStore> {
 }
 
 export async function deployEmployee(id: string): Promise<Employee> {
-  await updateEmployee(id, { status: 'deploying', healthStatus: 'provisioning' })
-  return updateEmployee(id, { status: 'installed', healthStatus: 'stopped' })
+  const deploying = await updateEmployee(id, { status: 'deploying', healthStatus: 'provisioning' })
+  const runtime = await createEmployeeRuntimeAdapter(deploying.engineType).deploy(deploying)
+  return updateEmployee(id, {
+    status: runtime.status,
+    healthStatus: runtime.healthStatus,
+    runtimeUrl: runtime.runtimeUrl,
+    port: runtime.port,
+  })
 }
 
 export async function startEmployee(id: string): Promise<Employee> {
-  return updateEmployee(id, { status: 'running', healthStatus: 'healthy' })
+  const employee = await getEmployee(id)
+  const runtime = await createEmployeeRuntimeAdapter(employee.engineType).start(employee)
+  return updateEmployee(id, {
+    status: runtime.status,
+    healthStatus: runtime.healthStatus,
+    runtimeUrl: runtime.runtimeUrl,
+    port: runtime.port,
+  })
 }
 
 export async function stopEmployee(id: string): Promise<Employee> {
-  return updateEmployee(id, { status: 'stopped', healthStatus: 'stopped' })
+  const employee = await getEmployee(id)
+  const runtime = await createEmployeeRuntimeAdapter(employee.engineType).stop(employee)
+  return updateEmployee(id, {
+    status: runtime.status,
+    healthStatus: runtime.healthStatus,
+    runtimeUrl: runtime.runtimeUrl,
+    port: runtime.port,
+  })
+}
+
+export async function checkEmployeeHealth(id: string): Promise<EmployeeHealthCheckResult> {
+  const employee = await getEmployee(id)
+  const runtime = await createEmployeeRuntimeAdapter(employee.engineType).health(employee)
+  const updated = await updateEmployee(id, {
+    status: runtime.status,
+    healthStatus: runtime.healthStatus,
+    runtimeUrl: runtime.runtimeUrl,
+    port: runtime.port,
+  })
+  return { employee: updated, runtime }
 }

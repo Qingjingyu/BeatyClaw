@@ -1,4 +1,5 @@
 import {
+  checkEmployeeHealth,
   createEmployee,
   deployEmployee,
   getCurrentEmployee,
@@ -58,6 +59,10 @@ export async function start(ctx: any) {
 
 export async function stop(ctx: any) {
   await handle(ctx, () => stopEmployee(idParam(ctx)))
+}
+
+export async function health(ctx: any) {
+  await handle(ctx, () => checkEmployeeHealth(idParam(ctx)))
 }
 
 export async function select(ctx: any) {

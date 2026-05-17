@@ -7,7 +7,7 @@ vi.mock('../../packages/client/src/api/client', () => ({
   request: mockRequest,
 }))
 
-import { createEmployee, fetchEmployees, selectEmployee } from '../../packages/client/src/api/agentic/employees'
+import { checkEmployeeHealth, createEmployee, fetchEmployees, selectEmployee } from '../../packages/client/src/api/agentic/employees'
 
 describe('Employees API', () => {
   beforeEach(() => {
@@ -32,5 +32,13 @@ describe('Employees API', () => {
     mockRequest.mockResolvedValueOnce({ currentEmployeeId: 'emp_1', employees: [] })
     await selectEmployee('emp_1')
     expect(mockRequest).toHaveBeenCalledWith('/api/employees/emp_1/select', { method: 'POST' })
+  })
+
+  it('checks employee health', async () => {
+    mockRequest.mockResolvedValueOnce({ employee: { id: 'emp_1' }, runtime: { employeeId: 'emp_1' } })
+
+    await checkEmployeeHealth('emp_1')
+
+    expect(mockRequest).toHaveBeenCalledWith('/api/employees/emp_1/health', { method: 'POST' })
   })
 })

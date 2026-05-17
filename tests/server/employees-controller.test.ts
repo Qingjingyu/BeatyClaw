@@ -64,4 +64,36 @@ describe('Employees controller', () => {
       healthStatus: 'unknown',
     })
   })
+
+  it('checks employee runtime health', async () => {
+    const ctrl = await import('../../packages/server/src/controllers/agentic/employees')
+    const createCtx: any = {
+      request: {
+        body: {
+          name: '运营小白',
+          engineType: 'hms',
+        },
+      },
+    }
+
+    await ctrl.create(createCtx)
+    await ctrl.deploy({ params: { id: createCtx.body.id } } as any)
+    await ctrl.start({ params: { id: createCtx.body.id } } as any)
+
+    const healthCtx: any = { params: { id: createCtx.body.id } }
+    await ctrl.health(healthCtx)
+
+    expect(healthCtx.body).toMatchObject({
+      employee: {
+        id: createCtx.body.id,
+        status: 'running',
+        healthStatus: 'healthy',
+      },
+      runtime: {
+        employeeId: createCtx.body.id,
+        status: 'running',
+        healthStatus: 'healthy',
+      },
+    })
+  })
 })

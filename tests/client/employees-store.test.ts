@@ -9,6 +9,7 @@ const mockEmployeesApi = vi.hoisted(() => ({
   deployEmployee: vi.fn(),
   startEmployee: vi.fn(),
   stopEmployee: vi.fn(),
+  checkEmployeeHealth: vi.fn(),
 }))
 
 vi.mock('@/api/agentic/employees', () => mockEmployeesApi)
@@ -74,5 +75,27 @@ describe('Employees Store', () => {
     await store.createEmployee({ name: '销售小白', engineType: 'openclaw' })
 
     expect(store.employees[0].name).toBe('销售小白')
+  })
+
+  it('checks health and upserts returned employee', async () => {
+    mockEmployeesApi.checkEmployeeHealth.mockResolvedValue({
+      employee: {
+        id: 'emp_1',
+        name: '销售小白',
+        engineType: 'openclaw',
+        status: 'running',
+        instanceRoot: '/tmp/employees/emp_1',
+        runtimeUrl: '',
+        containerName: 'beautyclaw-employee-emp_1',
+        port: null,
+        healthStatus: 'healthy',
+      },
+      runtime: { employeeId: 'emp_1', status: 'running', healthStatus: 'healthy' },
+    })
+
+    const store = useEmployeesStore()
+    await store.checkEmployeeHealth('emp_1')
+
+    expect(store.employees[0]).toMatchObject({ id: 'emp_1', status: 'running', healthStatus: 'healthy' })
   })
 })

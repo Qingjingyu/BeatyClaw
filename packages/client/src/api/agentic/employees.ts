@@ -25,6 +25,20 @@ export interface EmployeeListResponse {
   employees: Employee[]
 }
 
+export interface EmployeeHealthCheckResponse {
+  employee: Employee
+  runtime: {
+    employeeId: string
+    engineType: EmployeeEngineType
+    status: EmployeeStatus
+    healthStatus: EmployeeHealthStatus
+    runtimeUrl: string
+    port: number | null
+    containerName: string
+    updatedAt: string
+  }
+}
+
 export interface CreateEmployeePayload {
   name: string
   avatar?: string
@@ -63,6 +77,12 @@ export function startEmployee(id: string): Promise<Employee> {
 
 export function stopEmployee(id: string): Promise<Employee> {
   return request<Employee>(`/api/employees/${encodeURIComponent(id)}/stop`, {
+    method: 'POST',
+  })
+}
+
+export function checkEmployeeHealth(id: string): Promise<EmployeeHealthCheckResponse> {
+  return request<EmployeeHealthCheckResponse>(`/api/employees/${encodeURIComponent(id)}/health`, {
     method: 'POST',
   })
 }

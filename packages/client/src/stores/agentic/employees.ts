@@ -2,6 +2,7 @@ import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import {
   createEmployee as apiCreateEmployee,
+  checkEmployeeHealth as apiCheckEmployeeHealth,
   deployEmployee as apiDeployEmployee,
   fetchEmployees,
   selectEmployee as apiSelectEmployee,
@@ -73,6 +74,12 @@ export const useEmployeesStore = defineStore('employees', () => {
     upsertEmployee(await apiStopEmployee(id))
   }
 
+  async function checkEmployeeHealth(id: string) {
+    const result = await apiCheckEmployeeHealth(id)
+    upsertEmployee(result.employee)
+    return result
+  }
+
   return {
     employees,
     currentEmployeeId,
@@ -86,5 +93,6 @@ export const useEmployeesStore = defineStore('employees', () => {
     deployEmployee,
     startEmployee,
     stopEmployee,
+    checkEmployeeHealth,
   }
 })
