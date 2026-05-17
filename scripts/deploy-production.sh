@@ -140,9 +140,19 @@ log "build image: ${image_tag} from ${commit}"
 docker build -t "$image_tag" "$BUILD_DIR"
 
 container_env > "$env_file"
-if [[ -n "${BEATYCLAW_RUNTIME_PROVIDER:-}" ]]; then
-  set_env_value "$env_file" "BEATYCLAW_RUNTIME_PROVIDER" "$BEATYCLAW_RUNTIME_PROVIDER"
-fi
+for deploy_env_key in \
+  BEATYCLAW_RUNTIME_PROVIDER \
+  BEATYCLAW_HMS_INSTALL_MODE \
+  BEATYCLAW_HMS_PORT \
+  BEATYCLAW_HMS_HOST \
+  BEATYCLAW_HMS_HEALTH_URL \
+  BEATYCLAW_HMS_START_COMMAND \
+  BEATYCLAW_HMS_START_ARGS
+do
+  if [[ -n "${!deploy_env_key:-}" ]]; then
+    set_env_value "$env_file" "$deploy_env_key" "${!deploy_env_key}"
+  fi
+done
 if [[ -z "$PORT" ]]; then
   PORT="$(env_value PORT)"
 fi
