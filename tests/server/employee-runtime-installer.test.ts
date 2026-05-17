@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'fs/promises'
 import { tmpdir } from 'os'
 import { join } from 'path'
+import net from 'net'
 import type { Employee } from '../../packages/server/src/services/agentic/employees'
 
 describe('Employee runtime installer', () => {
@@ -43,6 +44,15 @@ describe('Employee runtime installer', () => {
       await new Promise(resolve => setTimeout(resolve, 80))
     }
     return latest
+  }
+
+  async function listenOn(port: number): Promise<net.Server> {
+    const server = net.createServer()
+    await new Promise<void>((resolve, reject) => {
+      server.once('error', reject)
+      server.listen(port, '127.0.0.1', () => resolve())
+    })
+    return server
   }
 
   it('writes an HMS install manifest and placeholder launcher', async () => {
@@ -104,6 +114,48 @@ describe('Employee runtime installer', () => {
       runtimeUrl: 'http://127.0.0.1:4801/health',
       healthUrl: 'http://127.0.0.1:4801/health',
     })
+  })
+
+  it('skips ports that are already bound by another local process', async () => {
+    process.env.BEATYCLAW_HMS_PORT_RANGE = '4810-4812'
+    const server = await listenOn(4810)
+    const { installEmployeeRuntime } = await import('../../packages/server/src/services/agentic/employee-runtime-installer')
+    const target = {
+      ...employee('emp_hms_bound_port'),
+      instanceRoot: join(instanceRoot, 'bound-port'),
+    }
+
+    try {
+      const manifest = await installEmployeeRuntime(target)
+
+      expect(manifest).toMatchObject({
+        employeeId: target.id,
+        port: 4811,
+        runtimeUrl: 'http://127.0.0.1:4811/health',
+      })
+    } finally {
+      await new Promise<void>(resolve => server.close(() => resolve()))
+    }
+  })
+
+  it('respects reserved port lock files while allocating from the pool', async () => {
+    process.env.BEATYCLAW_HMS_PORT_RANGE = '4820-4822'
+    const { installEmployeeRuntime } = await import('../../packages/server/src/services/agentic/employee-runtime-installer')
+    await mkdir(join(instanceRoot, '.runtime-port-locks'), { recursive: true })
+    await writeFile(join(instanceRoot, '.runtime-port-locks', '4820.lock'), 'reserved')
+    const target = {
+      ...employee('emp_hms_locked_port'),
+      instanceRoot: join(instanceRoot, 'locked-port'),
+    }
+
+    const manifest = await installEmployeeRuntime(target)
+
+    expect(manifest).toMatchObject({
+      employeeId: target.id,
+      port: 4821,
+      runtimeUrl: 'http://127.0.0.1:4821/health',
+    })
+    await expect(stat(join(instanceRoot, '.runtime-port-locks', '4821.lock'))).resolves.toBeTruthy()
   })
 
   it('writes a Hermes gateway install manifest when requested', async () => {

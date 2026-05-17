@@ -1,5 +1,6 @@
-import { chmod, mkdir, readdir, readFile, writeFile } from 'fs/promises'
+import { chmod, mkdir, open, readdir, readFile, writeFile } from 'fs/promises'
 import { dirname, join } from 'path'
+import net from 'net'
 import type { Employee, EmployeeEngineType } from './employees'
 import { getHermesBin } from '../hermes/hermes-path'
 
@@ -50,6 +51,48 @@ function getInstallerEnvKey(engineType: EmployeeEngineType, suffix: string): str
   return `BEATYCLAW_${engineType.toUpperCase()}_${suffix}`
 }
 
+function getPortLocksDir(employee: Employee): string {
+  return join(dirname(employee.instanceRoot), '.runtime-port-locks')
+}
+
+async function collectLockedPorts(employee: Employee): Promise<Set<number>> {
+  const locked = new Set<number>()
+  try {
+    const entries = await readdir(getPortLocksDir(employee), { withFileTypes: true })
+    for (const entry of entries) {
+      const match = entry.name.match(/^(\d+)\.lock$/)
+      if (!match) continue
+      const port = Number(match[1])
+      if (Number.isInteger(port) && port > 0 && port <= 65535) locked.add(port)
+    }
+  } catch {
+    // Missing lock dir means no reservations.
+  }
+  return locked
+}
+
+async function reservePort(employee: Employee, port: number): Promise<boolean> {
+  await mkdir(getPortLocksDir(employee), { recursive: true })
+  try {
+    const handle = await open(join(getPortLocksDir(employee), `${port}.lock`), 'wx')
+    await handle.writeFile(`${employee.id}\n`)
+    await handle.close()
+    return true
+  } catch {
+    return false
+  }
+}
+
+async function portIsAvailable(port: number): Promise<boolean> {
+  const server = net.createServer()
+  return new Promise(resolve => {
+    server.once('error', () => resolve(false))
+    server.listen(port, '127.0.0.1', () => {
+      server.close(() => resolve(true))
+    })
+  })
+}
+
 async function collectUsedPorts(employee: Employee): Promise<Set<number>> {
   const used = new Set<number>()
   const employeesRoot = dirname(employee.instanceRoot)
@@ -79,8 +122,11 @@ async function resolvePort(employee: Employee, engineType: EmployeeEngineType, f
   if (!range) return fallback
 
   const used = await collectUsedPorts(employee)
+  const locked = await collectLockedPorts(employee)
   for (let port = range.start; port <= range.end; port += 1) {
-    if (!used.has(port)) return port
+    if (used.has(port) || locked.has(port)) continue
+    if (!await portIsAvailable(port)) continue
+    if (await reservePort(employee, port)) return port
   }
   return fallback
 }
