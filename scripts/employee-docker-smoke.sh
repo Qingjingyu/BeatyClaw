@@ -2,9 +2,9 @@
 set -Eeuo pipefail
 
 DEPLOY_ROOT="${DEPLOY_ROOT:-/home/ubuntu/agent-stack}"
-APP_NAME="${APP_NAME:-agentic}"
 SMOKE_ROOT="${SMOKE_ROOT:-${DEPLOY_ROOT}/employee-docker-smoke}"
-IMAGE="${BEATYCLAW_SMOKE_DOCKER_IMAGE:-$(docker inspect "$APP_NAME" --format '{{.Config.Image}}')}"
+IMAGE="${BEATYCLAW_SMOKE_DOCKER_IMAGE:-beautyclaw-employee-runtime:smoke}"
+BUILD_IMAGE="${BEATYCLAW_SMOKE_BUILD_IMAGE:-1}"
 CONTAINER_NAME="${CONTAINER_NAME:-beautyclaw-employee-smoke}"
 PORT="${PORT:-4899}"
 
@@ -19,6 +19,11 @@ cleanup() {
 mkdir -p "$SMOKE_ROOT"/{config,data,logs,workspace}
 trap cleanup EXIT
 
+if [[ "$BUILD_IMAGE" == "1" ]]; then
+  log "building image=${IMAGE}"
+  docker build -f Dockerfile.employee-runtime -t "$IMAGE" .
+fi
+
 log "image=${IMAGE}"
 log "root=${SMOKE_ROOT}"
 cleanup
@@ -31,14 +36,17 @@ docker run -d \
   -e BEATYCLAW_EMPLOYEE_ID=smoke \
   -e BEATYCLAW_EMPLOYEE_ROOT=/home/agent/employee \
   -e BEATYCLAW_EMPLOYEE_ENGINE=hms \
-  --entrypoint node \
-  "$IMAGE" \
-  -e "setInterval(() => {}, 1000)" >/dev/null
+  -e BEATYCLAW_EMPLOYEE_PORT="$PORT" \
+  -e PORT="$PORT" \
+  -e BEATYCLAW_HMS_PORT="$PORT" \
+  "$IMAGE" >/dev/null
 
 if [[ "$(docker inspect -f '{{.State.Running}}' "$CONTAINER_NAME")" != "true" ]]; then
   log "container did not reach running state"
   exit 1
 fi
+
+curl -fsS "http://127.0.0.1:${PORT}/health" >/dev/null
 
 log "container running"
 cleanup

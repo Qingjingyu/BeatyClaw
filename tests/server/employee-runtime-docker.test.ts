@@ -101,6 +101,12 @@ describe('Employee docker runtime adapter', () => {
       '127.0.0.1:4581:4581',
       '-v',
       `${target.instanceRoot}:/home/agent/employee`,
+      '-e',
+      'BEATYCLAW_EMPLOYEE_PORT=4581',
+      '-e',
+      'PORT=4581',
+      '-e',
+      'BEATYCLAW_HMS_PORT=4581',
       'beautyclaw/hms:test',
     ]))
     expect(calls).toContainEqual(expect.arrayContaining(['inspect', '-f', '{{.State.Running}}', target.containerName]))

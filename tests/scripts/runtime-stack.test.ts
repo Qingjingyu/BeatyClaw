@@ -33,7 +33,10 @@ describe('runtime orchestration scripts', () => {
 
   it('provides a server smoke test for employee docker runtime containers', () => {
     expect(employeeDockerSmokeScript).toContain('CONTAINER_NAME="${CONTAINER_NAME:-beautyclaw-employee-smoke}"')
+    expect(employeeDockerSmokeScript).toContain('Dockerfile.employee-runtime')
     expect(employeeDockerSmokeScript).toContain('-v "${SMOKE_ROOT}:/home/agent/employee"')
+    expect(employeeDockerSmokeScript).toContain('-e BEATYCLAW_EMPLOYEE_PORT="$PORT"')
+    expect(employeeDockerSmokeScript).toContain('curl -fsS "http://127.0.0.1:${PORT}/health"')
     expect(employeeDockerSmokeScript).toContain("docker inspect -f '{{.State.Running}}'")
     expect(employeeDockerSmokeScript).toContain('docker rm -f "$CONTAINER_NAME"')
   })

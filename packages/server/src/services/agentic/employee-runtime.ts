@@ -470,6 +470,12 @@ export class DockerEmployeeRuntimeAdapter implements EmployeeRuntimeAdapter {
       `BEATYCLAW_EMPLOYEE_ROOT=/home/agent/employee`,
       '-e',
       `BEATYCLAW_EMPLOYEE_ENGINE=${employee.engineType}`,
+      '-e',
+      `BEATYCLAW_EMPLOYEE_PORT=${config.port || ''}`,
+      '-e',
+      `PORT=${config.port || ''}`,
+      '-e',
+      `${envKey(this.engineType, 'PORT')}=${config.port || ''}`,
       config.image,
     ]
     const rm = spawnSync(config.dockerBin, [...config.dockerArgsPrefix, 'rm', '-f', employee.containerName], { encoding: 'utf-8' })

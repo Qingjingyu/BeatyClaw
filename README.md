@@ -631,7 +631,27 @@ cd /home/ubuntu/agent-stack/agentic-build-current
 ./scripts/employee-docker-smoke.sh
 ```
 
-该脚本使用当前 `agentic` 镜像启动一个临时员工容器，验证 Docker run / inspect / rm、目录挂载和本机端口绑定，不会修改正式员工数据。
+该脚本默认构建 `Dockerfile.employee-runtime`，启动一个临时员工 runtime 容器，并访问 `http://127.0.0.1:{PORT}/health`。这一步验证的不是完整 HMS/OpenClaw 智能，而是验证“员工 AI 引擎可以作为独立容器被产品层安装、启动、健康检查和清理”。
+
+当前员工 runtime 镜像：
+
+```text
+Dockerfile.employee-runtime
+packages/employee-runtime/health-server.mjs
+```
+
+容器启动时会接收：
+
+```text
+BEATYCLAW_EMPLOYEE_ID
+BEATYCLAW_EMPLOYEE_ROOT=/home/agent/employee
+BEATYCLAW_EMPLOYEE_ENGINE
+BEATYCLAW_EMPLOYEE_PORT
+PORT
+BEATYCLAW_HMS_PORT / BEATYCLAW_OPENCLAW_PORT / BEATYCLAW_COCO_PORT
+```
+
+这使后续 HMS / OpenClaw / COCO 的真实镜像只要遵守同一套环境变量和 `/health` 约定，就能替换当前 health runtime 镜像，被 BeatyClaw 产品层统一管理。
 
 ## 关键目录
 
@@ -642,6 +662,8 @@ packages/client/public/logo.png                        当前头像/logo
 packages/server/src/services/agentic/employees.ts      员工记录和实例目录
 packages/server/src/services/agentic/employee-runtime.ts 员工 runtime 状态
 packages/server/src/services/agentic/employee-runtime-installer.ts 员工 runtime 安装清单
+packages/employee-runtime/health-server.mjs             员工 AI 引擎容器 health runtime
+Dockerfile.employee-runtime                             员工 AI 引擎容器镜像
 packages/server/src/services/agentic/weixin-runtime.ts 微信 runtime
 packages/server/src/services/agentic/telegram-runtime.ts Telegram runtime
 packages/server/src/controllers/hermes/config.ts       平台凭据保存
