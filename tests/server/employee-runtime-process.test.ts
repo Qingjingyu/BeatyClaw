@@ -66,4 +66,22 @@ describe('Employee process runtime adapter', () => {
       port: 4567,
     })
   })
+
+  it('uses command and env from the install manifest after deploy', async () => {
+    process.env.BEATYCLAW_HMS_START_COMMAND = process.execPath
+    process.env.BEATYCLAW_HMS_START_ARGS = '-e setTimeout(() => {}, 200)'
+    process.env.BEATYCLAW_HMS_PORT = '4568'
+    const { createEmployeeRuntimeAdapter, getRuntimeStatePath } = await import('../../packages/server/src/services/agentic/employee-runtime')
+    const adapter = createEmployeeRuntimeAdapter('hms')
+    const target = employee()
+
+    await adapter.deploy(target)
+    await expect(adapter.start(target)).resolves.toMatchObject({ mode: 'process', status: 'running', port: 4568 })
+    await expect(adapter.stop(target)).resolves.toMatchObject({ mode: 'process', status: 'stopped' })
+    expect(JSON.parse(await readFile(getRuntimeStatePath(target), 'utf-8'))).toMatchObject({
+      employeeId: target.id,
+      mode: 'process',
+      port: 4568,
+    })
+  })
 })

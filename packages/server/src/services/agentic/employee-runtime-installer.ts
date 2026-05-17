@@ -1,6 +1,7 @@
 import { chmod, mkdir, readFile, writeFile } from 'fs/promises'
 import { join } from 'path'
 import type { Employee, EmployeeEngineType } from './employees'
+import { getHermesBin } from '../hermes/hermes-path'
 
 export interface EmployeeRuntimeInstallManifest {
   employeeId: string
@@ -9,8 +10,10 @@ export interface EmployeeRuntimeInstallManifest {
   port: number
   startCommand: string
   startArgs: string[]
+  env: Record<string, string>
   healthUrl: string
   installedAt: string
+  installMode: 'placeholder' | 'hermes-gateway' | 'custom'
 }
 
 export function getInstallManifestPath(employee: Employee): string {
@@ -42,6 +45,34 @@ function splitArgs(raw: string): string[] {
     .split(' ')
     .map(part => part.trim())
     .filter(Boolean)
+}
+
+function buildUrl(host: string, port: number): string {
+  const safeHost = host.includes(':') && !host.startsWith('[') ? `[${host}]` : host
+  return `http://${safeHost}:${port}`
+}
+
+function getHmsHost(): string {
+  return process.env.BEATYCLAW_HMS_HOST || '127.0.0.1'
+}
+
+async function writeHermesGatewayConfig(hermesHome: string, port: number, host: string): Promise<void> {
+  await mkdir(hermesHome, { recursive: true })
+  await writeFile(
+    join(hermesHome, 'config.yaml'),
+    [
+      'platforms:',
+      '  api_server:',
+      '    enabled: true',
+      "    key: ''",
+      "    cors_origins: '*'",
+      '    extra:',
+      `      port: ${port}`,
+      `      host: ${host}`,
+      '',
+    ].join('\n'),
+    { mode: 0o600 },
+  )
 }
 
 async function writeHmsPlaceholderLauncher(employee: Employee, port: number): Promise<string> {
@@ -91,16 +122,25 @@ async function installGenericRuntime(employee: Employee): Promise<EmployeeRuntim
     port,
     startCommand,
     startArgs,
+    env: {},
     healthUrl,
     installedAt: nowIso(),
+    installMode: startArgs.length > 0 ? 'custom' : 'placeholder',
   })
 }
 
 async function installHmsRuntime(employee: Employee): Promise<EmployeeRuntimeInstallManifest> {
   const port = parsePort(process.env.BEATYCLAW_HMS_PORT, defaultPort(employee))
-  const healthUrl = String(process.env.BEATYCLAW_HMS_HEALTH_URL || `http://127.0.0.1:${port}/health`)
+  const host = getHmsHost()
+  const healthUrl = String(process.env.BEATYCLAW_HMS_HEALTH_URL || `${buildUrl(host, port)}/health`)
   const command = String(process.env.BEATYCLAW_HMS_START_COMMAND || process.execPath)
   const configuredArgs = splitArgs(String(process.env.BEATYCLAW_HMS_START_ARGS || ''))
+  const installMode = String(process.env.BEATYCLAW_HMS_INSTALL_MODE || '').trim()
+
+  if (installMode === 'hermes-gateway') {
+    return installHmsGatewayRuntime(employee, port, host, healthUrl)
+  }
+
   const launcherPath = configuredArgs.length > 0 ? '' : await writeHmsPlaceholderLauncher(employee, port)
   const startArgs = configuredArgs.length > 0 ? configuredArgs : [launcherPath]
 
@@ -111,8 +151,39 @@ async function installHmsRuntime(employee: Employee): Promise<EmployeeRuntimeIns
     port,
     startCommand: command,
     startArgs,
+    env: {},
     healthUrl,
     installedAt: nowIso(),
+    installMode: configuredArgs.length > 0 ? 'custom' : 'placeholder',
+  })
+}
+
+async function installHmsGatewayRuntime(employee: Employee, port: number, host: string, healthUrl: string): Promise<EmployeeRuntimeInstallManifest> {
+  const hermesHome = join(employee.instanceRoot, 'config', 'hermes-home')
+  const yoyooHome = join(employee.instanceRoot, 'data', 'yoyoo-home')
+  const workspace = join(employee.instanceRoot, 'workspace')
+  await mkdir(yoyooHome, { recursive: true })
+  await mkdir(workspace, { recursive: true })
+  await writeHermesGatewayConfig(hermesHome, port, host)
+
+  return writeInstallManifest(employee, {
+    employeeId: employee.id,
+    engineType: 'hms',
+    runtimeUrl: healthUrl,
+    port,
+    startCommand: getHermesBin(process.env.BEATYCLAW_HMS_START_COMMAND),
+    startArgs: ['gateway', 'run', '--replace'],
+    env: {
+      HERMES_HOME: hermesHome,
+      YOYOO_HOME: yoyooHome,
+      YOYOO_WORKSPACE: workspace,
+      YOYOO_USER_ID: employee.id,
+      YOYOO_TENANT_ID: 'single-user',
+      YOYOO_WORKSPACE_ID: employee.id,
+    },
+    healthUrl,
+    installedAt: nowIso(),
+    installMode: 'hermes-gateway',
   })
 }
 
@@ -132,8 +203,14 @@ export async function readEmployeeRuntimeInstallManifest(employee: Employee): Pr
       port: parsePort(parsed.port, defaultPort(employee)),
       startCommand: String(parsed.startCommand || parsed.start_command || ''),
       startArgs: Array.isArray(parsed.startArgs || parsed.start_args) ? (parsed.startArgs || parsed.start_args).map(String) : [],
+      env: parsed.env && typeof parsed.env === 'object'
+        ? Object.fromEntries(Object.entries(parsed.env).map(([key, value]) => [key, String(value)]))
+        : {},
       healthUrl: String(parsed.healthUrl || parsed.health_url || ''),
       installedAt: String(parsed.installedAt || parsed.installed_at || ''),
+      installMode: parsed.installMode === 'hermes-gateway' || parsed.install_mode === 'hermes-gateway'
+        ? 'hermes-gateway'
+        : (parsed.installMode === 'custom' || parsed.install_mode === 'custom' ? 'custom' : 'placeholder'),
     }
   } catch {
     return null

@@ -140,6 +140,7 @@ interface ProcessRuntimeConfig {
   args: string[]
   healthUrl: string
   port: number | null
+  env: Record<string, string>
 }
 
 const processRegistry = new Map<string, ChildProcess>()
@@ -165,6 +166,7 @@ function getProcessRuntimeConfig(engineType: EmployeeEngineType): ProcessRuntime
     args: splitCommandArgs(String(process.env[envKey(engineType, 'START_ARGS')] || '')),
     healthUrl,
     port: Number.isInteger(portValue) && portValue > 0 && portValue <= 65535 ? portValue : null,
+    env: {},
   }
 }
 
@@ -178,6 +180,7 @@ async function getRuntimeLaunchConfig(employee: Employee, engineType: EmployeeEn
     args: manifest.startArgs.length > 0 ? manifest.startArgs : envConfig.args,
     healthUrl: manifest.healthUrl || envConfig.healthUrl,
     port: manifest.port || envConfig.port,
+    env: { ...envConfig.env, ...manifest.env },
   }
 }
 
@@ -235,6 +238,7 @@ export class ProcessEmployeeRuntimeAdapter implements EmployeeRuntimeAdapter {
         stdio: 'ignore',
         env: {
           ...process.env,
+          ...config.env,
           BEATYCLAW_EMPLOYEE_ID: employee.id,
           BEATYCLAW_EMPLOYEE_ROOT: employee.instanceRoot,
           BEATYCLAW_EMPLOYEE_ENGINE: employee.engineType,
