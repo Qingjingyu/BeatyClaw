@@ -271,6 +271,48 @@ GET /api/hermes/runtime/status
 
 前端 `AI 引擎` 页面显示当前引擎和 COCO / HMS / OpenClaw 卡槽；`链接 / 频道` 页面显示当前 AI 引擎状态。
 
+### Runtime 运行时编排
+
+线上 `zylos / COCO` 引擎不是单个进程，而是三段链路：
+
+```text
+agentic 产品容器
+→ hxa-connect 消息总线
+→ hxa-worker-bot 执行 bot
+→ GPT-5.5 / OpenAI-compatible API
+```
+
+服务器脚本：
+
+```bash
+./scripts/runtime-stack.sh status
+./scripts/runtime-stack.sh healthcheck
+./scripts/runtime-stack.sh recover
+./scripts/runtime-stack.sh restart
+```
+
+脚本职责：
+
+- `runtime-stack.sh`：统一启动、恢复、重启 `hxa-connect` 和 `hxa-worker-bot`，产品容器 `agentic` 不会被 `stop` 动作关闭。
+- `runtime-healthcheck.sh`：一条命令检查容器、共享数据目录、token 身份隔离、hxa-connect 健康、产品端接口和运行时诊断接口。
+
+线上关键目录：
+
+```text
+/home/ubuntu/agent-stack/agentic-hermes  -> /home/agent/.hermes
+/home/ubuntu/agent-stack/agentic-webui   -> /home/agent/.hermes-web-ui
+/home/ubuntu/agent-stack/hxa-connect     -> hxa-connect compose 目录
+/home/ubuntu/agent-stack/hxa-worker-bot/.env
+```
+
+token 分工：
+
+- `AGENTIC_HXA_TOKEN`：BeatyClaw 产品端入口 bot，用来把用户消息发给 `zylos-main`。
+- `ZYLOS_MAIN_HXA_TOKEN`：`zylos-main` 的 bot 身份。
+- `hxa-worker-bot/.env` 里的 `HXA_TOKEN`：`worker-bot` 的 bot 身份。
+
+这三个身份不能混用，否则会出现“页面正常，但消息进入不了真实多 Agent 链路”的问题。
+
 真实切换验收：
 
 ```bash
@@ -503,6 +545,30 @@ docker build -t agentic-yoyoo-saas:latest .
 - 不要把服务器密码、OpenAI Key、Telegram Token、微信 Token 写进代码或 README。
 - README 只记录状态和验收方式，不记录真实密钥。
 
+### 运行时恢复
+
+当线上出现“发消息只返回 AI 能力端不可用”或“新建员工后没有真实回复”时，先不要改业务代码，按下面顺序排查：
+
+```bash
+cd /home/ubuntu/agent-stack/agentic-build-current
+./scripts/runtime-stack.sh status
+./scripts/runtime-stack.sh healthcheck
+```
+
+如果 `hxa-connect` 或 `hxa-worker-bot` 掉线，执行：
+
+```bash
+./scripts/runtime-stack.sh recover
+```
+
+如果需要带登录态检查完整 Runtime 诊断：
+
+```bash
+AGENTIC_DEPLOY_VERIFY_EMAIL=... \
+AGENTIC_DEPLOY_VERIFY_PASSWORD=... \
+./scripts/runtime-stack.sh healthcheck
+```
+
 ## 关键目录
 
 ```text
@@ -514,6 +580,8 @@ packages/server/src/services/agentic/telegram-runtime.ts Telegram runtime
 packages/server/src/controllers/hermes/config.ts       平台凭据保存
 packages/server/src/controllers/hermes/weixin.ts       微信状态/二维码/保存
 packages/server/src/controllers/hermes/telegram.ts     Telegram 状态
+scripts/runtime-stack.sh                               AI 引擎侧车编排
+scripts/runtime-healthcheck.sh                         线上 Runtime 链路自检
 tests/server/weixin-runtime.test.ts                    微信 runtime 测试
 tests/server/telegram-runtime.test.ts                  Telegram runtime 测试
 开发过程/010_Connectors_Runtime.md                      连接器实现过程记录
