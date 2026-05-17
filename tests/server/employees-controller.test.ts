@@ -51,7 +51,7 @@ describe('Employees controller', () => {
     })
   })
 
-  it('creates an employee from request body', async () => {
+  it('creates and provisions an employee from request body', async () => {
     const ctrl = await import('../../packages/server/src/controllers/agentic/employees')
     const ctx: any = {
       request: {
@@ -69,10 +69,10 @@ describe('Employees controller', () => {
     expect(ctx.body).toMatchObject({
       name: '销售小白',
       engineType: 'openclaw',
-      status: 'draft',
+      status: 'running',
       instanceRoot: expect.stringContaining('/employees/emp_'),
       containerName: expect.stringContaining('beautyclaw-employee-emp_'),
-      healthStatus: 'unknown',
+      healthStatus: 'healthy',
     })
   })
 

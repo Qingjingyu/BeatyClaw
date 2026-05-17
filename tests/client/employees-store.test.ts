@@ -90,23 +90,50 @@ describe('Employees Store', () => {
     expect(mockEmployeesApi.fetchEmployees).toHaveBeenCalledTimes(2)
   })
 
-  it('creates and upserts an employee', async () => {
-    mockEmployeesApi.createEmployee.mockResolvedValue({
+  it('shows a deploying card while creating and replaces it with the provisioned employee', async () => {
+    let resolveCreate: (employee: any) => void = () => {}
+    mockEmployeesApi.createEmployee.mockReturnValue(new Promise(resolve => {
+      resolveCreate = resolve
+    }))
+
+    const store = useEmployeesStore()
+    const createPromise = store.createEmployee({ name: '销售小白', engineType: 'openclaw' })
+
+    expect(store.saving).toBe(true)
+    expect(store.employees).toHaveLength(1)
+    expect(store.employees[0]).toMatchObject({
+      name: '销售小白',
+      engineType: 'openclaw',
+      status: 'deploying',
+      healthStatus: 'provisioning',
+    })
+
+    resolveCreate({
       id: 'emp_1',
       name: '销售小白',
       engineType: 'openclaw',
-      status: 'draft',
+      status: 'running',
       instanceRoot: '/tmp/employees/emp_1',
       runtimeUrl: '',
       containerName: 'beautyclaw-employee-emp_1',
       port: null,
-      healthStatus: 'unknown',
+      healthStatus: 'healthy',
+      visibility: 'visible',
+      deletedAt: null,
+      createdAt: '2026-05-17T00:00:00.000Z',
+      updatedAt: '2026-05-17T00:00:00.000Z',
     })
 
-    const store = useEmployeesStore()
-    await store.createEmployee({ name: '销售小白', engineType: 'openclaw' })
+    await createPromise
 
-    expect(store.employees[0].name).toBe('销售小白')
+    expect(store.saving).toBe(false)
+    expect(store.employees).toHaveLength(1)
+    expect(store.employees[0]).toMatchObject({
+      id: 'emp_1',
+      name: '销售小白',
+      status: 'running',
+      healthStatus: 'healthy',
+    })
   })
 
   it('checks health and upserts returned employee', async () => {

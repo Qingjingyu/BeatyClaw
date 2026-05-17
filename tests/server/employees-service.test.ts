@@ -110,6 +110,63 @@ describe('Employees service', () => {
     })
   })
 
+  it('creates and provisions an employee into a healthy running runtime', async () => {
+    const service = await import('../../packages/server/src/services/agentic/employees')
+
+    const employee = await service.createProvisionedEmployee({
+      name: '自动上岗员工',
+      engineType: 'hms',
+      systemRole: '你是自动部署测试员工。',
+    })
+
+    expect(employee).toMatchObject({
+      name: '自动上岗员工',
+      engineType: 'hms',
+      status: 'running',
+      healthStatus: 'healthy',
+      systemRole: '你是自动部署测试员工。',
+      instanceRoot: join(authHome, 'employees', employee.id),
+      containerName: `beautyclaw-employee-${employee.id}`,
+      visibility: 'visible',
+      deletedAt: null,
+    })
+    await expect(stat(join(employee.instanceRoot, 'config'))).resolves.toBeTruthy()
+    await expect(stat(join(employee.instanceRoot, 'workspace'))).resolves.toBeTruthy()
+    expect(JSON.parse(await readFile(join(employee.instanceRoot, 'config', 'runtime-state.json'), 'utf-8'))).toMatchObject({
+      employeeId: employee.id,
+      engineType: 'hms',
+      status: 'running',
+      healthStatus: 'healthy',
+    })
+  })
+
+  it('marks only the new employee failed when auto provisioning cannot start', async () => {
+    process.env.BEATYCLAW_HMS_START_ARGS = '/tmp/beautyclaw-missing-runtime-entry.mjs'
+    process.env.BEATYCLAW_HMS_HEALTH_URL = 'http://127.0.0.1:9/health'
+    const service = await import('../../packages/server/src/services/agentic/employees')
+
+    const existing = await service.createProvisionedEmployee({ name: '正常员工', engineType: 'zylos' })
+    const failed = await service.createProvisionedEmployee({ name: '失败员工', engineType: 'hms' }, { healthAttempts: 1, healthIntervalMs: 0 })
+
+    expect(existing).toMatchObject({
+      name: '正常员工',
+      status: 'running',
+      healthStatus: 'healthy',
+    })
+    expect(await service.getEmployee(existing.id)).toMatchObject({
+      id: existing.id,
+      status: 'running',
+      healthStatus: 'healthy',
+    })
+    expect(failed).toMatchObject({
+      name: '失败员工',
+      status: 'failed',
+      healthStatus: 'unhealthy',
+    })
+    await expect(stat(join(failed.instanceRoot, 'config'))).resolves.toBeTruthy()
+    await expect(stat(join(failed.instanceRoot, 'workspace'))).resolves.toBeTruthy()
+  })
+
   it('hides, restores, and soft deletes employees without removing instance data', async () => {
     const service = await import('../../packages/server/src/services/agentic/employees')
 

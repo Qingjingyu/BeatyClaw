@@ -150,7 +150,7 @@ describe('ConversationMonitorPane', () => {
     const trace = wrapper.find('.conversation-monitor__runtime-trace')
     expect(trace.exists()).toBe(true)
     expect(trace.text()).toContain('来源：微信')
-    expect(trace.text()).toContain('AI 层：zylos')
+    expect(trace.text()).toContain('AI 层：COCO')
     expect(trace.text()).toContain('模型：hxa:zylos-main')
     expect(trace.text()).toContain('Worker：worker-bot')
     expect(trace.text()).toContain('状态：成功')
