@@ -217,6 +217,13 @@ function pidIsAlive(pid: number | null): boolean {
   }
 }
 
+function registeredProcessIsAlive(employeeId: string, pid: number | null): boolean {
+  const child = processRegistry.get(employeeId)
+  if (!child) return pidIsAlive(pid)
+  if (pid && child.pid !== pid) return pidIsAlive(pid)
+  return child.exitCode === null && !child.killed
+}
+
 async function openRuntimeLog(employee: Employee): Promise<{ fd: number; close: () => Promise<void>; logPath: string }> {
   await mkdir(join(employee.instanceRoot, 'logs'), { recursive: true })
   const logPath = join(employee.instanceRoot, 'logs', 'runtime.log')
@@ -255,7 +262,7 @@ export class ProcessEmployeeRuntimeAdapter implements EmployeeRuntimeAdapter {
     if (!config.enabled) return this.fallback.start(employee)
 
     const existing = processRegistry.get(employee.id)
-    if (existing && existing.exitCode === null) {
+    if (existing && existing.exitCode === null && !existing.killed) {
       return updateRuntimeState(employee, {
         status: 'running',
         healthStatus: 'healthy',
@@ -268,6 +275,7 @@ export class ProcessEmployeeRuntimeAdapter implements EmployeeRuntimeAdapter {
         logPath: join(employee.instanceRoot, 'logs', 'runtime.log'),
       })
     }
+    if (existing) processRegistry.delete(employee.id)
 
     try {
       const runtimeLog = await openRuntimeLog(employee)
@@ -284,7 +292,11 @@ export class ProcessEmployeeRuntimeAdapter implements EmployeeRuntimeAdapter {
           BEATYCLAW_HMS_PORT: config.port ? String(config.port) : '',
         },
       })
-      child.on('close', () => runtimeLog.close().catch(() => {}))
+      child.on('close', () => {
+        const current = processRegistry.get(employee.id)
+        if (current === child) processRegistry.delete(employee.id)
+        runtimeLog.close().catch(() => {})
+      })
       child.unref()
       processRegistry.set(employee.id, child)
       return updateRuntimeState(employee, {
@@ -348,7 +360,7 @@ export class ProcessEmployeeRuntimeAdapter implements EmployeeRuntimeAdapter {
       })
     }
 
-    const alive = pidIsAlive(state.pid)
+    const alive = registeredProcessIsAlive(employee.id, state.pid)
     const healthy = alive && await probeHealth(config.healthUrl)
     return updateRuntimeState(employee, {
       status: alive ? 'running' : 'failed',
