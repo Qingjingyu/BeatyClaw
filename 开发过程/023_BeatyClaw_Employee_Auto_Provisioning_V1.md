@@ -61,7 +61,7 @@
 npm run test -- tests/server/employees-service.test.ts tests/server/employees-controller.test.ts tests/client/employees-store.test.ts
 ```
 
-结果：3 个测试文件通过，13 个测试通过。
+结果：3 个测试文件通过，14 个测试通过。
 
 其中覆盖：
 
@@ -76,4 +76,3 @@ npm run test -- tests/server/employees-service.test.ts tests/server/employees-co
 - 如果某个引擎配置了真实启动命令，会优先使用真实命令。
 - 如果真实 Runtime 起不来，员工会进入 `failed / unhealthy`，目录会保留用于排查。
 - 本轮不做公网域名、端口开放、Nginx 或防火墙调整。
-
