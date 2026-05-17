@@ -101,16 +101,33 @@ model:
 
 - 员工自己的 `config/hermes-home/.env` 中配置模型密钥。
 
+## Installer 自动模型配置
+
+为了避免新 HMS 员工部署后还要手动改文件，installer 已支持从部署环境写入员工级模型配置：
+
+```text
+BEATYCLAW_HMS_MODEL=gpt-5.5
+BEATYCLAW_HMS_MODEL_PROVIDER=custom
+BEATYCLAW_HMS_MODEL_BASE_URL=https://key.cosark.com.cn/v1
+BEATYCLAW_HMS_MODEL_API_KEY=...
+```
+
+写入位置：
+
+- `员工目录/config/hermes-home/config.yaml`
+- `员工目录/config/hermes-home/.env`
+
+密钥只写入服务器运行目录，不进入前端、不提交仓库。
+
 ## 当前边界
 
 - 还没有自动端口池。
 - 还没有在 UI 中显示 HMS gateway API key 状态。
 - 还没有按会话选择不同员工，目前使用当前员工。
-- 还没有把模型 provider 配置自动写入 HMS 员工 installer，目前线上是手动写入员工级 `config.yaml` 和 `.env`。
 - 还没有把所有旧 Hermes 页面请求按员工实例 gateway 全部路由。
 
 ## 下一步
 
 1. 部署最新 `chat-run-socket` 改动，让 Web 聊天框的 `provider=hms` 正式走 Conversation Hub。
 2. 用网页聊天框发送消息，确认 runtime trace 为 `hms`。
-3. 把 HMS 员工模型配置沉淀为 installer 自动写入能力，避免以后手工改 `config.yaml`。
+3. 用一个全新的 HMS 员工验证 installer 自动模型配置。
