@@ -88,6 +88,21 @@ Authorization: Bearer {apiKey}
   - `runtimeUrl=http://127.0.0.1:5180/health`
 - 直接请求员工 HMS gateway `/v1/chat/completions` 返回 `HMS gateway OK`。
 
+自动配置复验：
+
+- 部署镜像：`agentic-yoyoo-saas:prod-20260517143515`
+- 新建 HMS 员工：`emp_054ae748ae8d0095`
+- installer 自动写入：
+  - `model.default=gpt-5.5`
+  - `model.provider=custom`
+  - `model.base_url=https://key.cosark.com.cn/v1`
+  - 员工级 `.env` 中的 `OPENAI_API_KEY`、`OPENAI_BASE_URL`、`HERMES_MODEL`
+- 新员工启动后：
+  - `status=running`
+  - `healthStatus=healthy`
+  - `runtimeUrl=http://127.0.0.1:5091/health`
+- 直接请求新员工 HMS gateway `/v1/chat/completions` 返回 `Auto HMS OK`。
+
 补充配置：
 
 - HMS gateway 需要在员工自己的 `config/hermes-home/config.yaml` 中配置：
