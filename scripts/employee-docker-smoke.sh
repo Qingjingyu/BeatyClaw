@@ -41,13 +41,18 @@ docker run -d \
   -e BEATYCLAW_HMS_PORT="$PORT" \
   "$IMAGE" >/dev/null
 
-if [[ "$(docker inspect -f '{{.State.Running}}' "$CONTAINER_NAME")" != "true" ]]; then
-  log "container did not reach running state"
-  exit 1
-fi
+for attempt in {1..30}; do
+  if [[ "$(docker inspect -f '{{.State.Running}}' "$CONTAINER_NAME")" == "true" ]] \
+    && curl -fsS "http://127.0.0.1:${PORT}/health" >/dev/null; then
+    log "container running"
+    cleanup
+    log "container cleanup ok"
+    exit 0
+  fi
+  sleep 0.5
+done
 
-curl -fsS "http://127.0.0.1:${PORT}/health" >/dev/null
-
-log "container running"
+log "container did not pass health check"
+docker logs "$CONTAINER_NAME" 2>&1 | tail -50 || true
 cleanup
-log "container cleanup ok"
+exit 1

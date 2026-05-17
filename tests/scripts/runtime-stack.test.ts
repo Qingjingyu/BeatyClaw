@@ -37,6 +37,7 @@ describe('runtime orchestration scripts', () => {
     expect(employeeDockerSmokeScript).toContain('-v "${SMOKE_ROOT}:/home/agent/employee"')
     expect(employeeDockerSmokeScript).toContain('-e BEATYCLAW_EMPLOYEE_PORT="$PORT"')
     expect(employeeDockerSmokeScript).toContain('curl -fsS "http://127.0.0.1:${PORT}/health"')
+    expect(employeeDockerSmokeScript).toContain('for attempt in {1..30}; do')
     expect(employeeDockerSmokeScript).toContain("docker inspect -f '{{.State.Running}}'")
     expect(employeeDockerSmokeScript).toContain('docker rm -f "$CONTAINER_NAME"')
   })
