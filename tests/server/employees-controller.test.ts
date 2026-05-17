@@ -106,4 +106,29 @@ describe('Employees controller', () => {
       },
     })
   })
+
+  it('hides, restores, and soft deletes employees through controller actions', async () => {
+    const ctrl = await import('../../packages/server/src/controllers/agentic/employees')
+    const createCtx: any = {
+      request: {
+        body: {
+          name: '可隐藏员工',
+          engineType: 'hms',
+        },
+      },
+    }
+    await ctrl.create(createCtx)
+
+    const hideCtx: any = { params: { id: createCtx.body.id } }
+    await ctrl.hide(hideCtx)
+    expect(hideCtx.body).toMatchObject({ id: createCtx.body.id, visibility: 'hidden' })
+
+    const restoreCtx: any = { params: { id: createCtx.body.id } }
+    await ctrl.restore(restoreCtx)
+    expect(restoreCtx.body).toMatchObject({ id: createCtx.body.id, visibility: 'visible', deletedAt: null })
+
+    const deleteCtx: any = { params: { id: createCtx.body.id } }
+    await ctrl.remove(deleteCtx)
+    expect(deleteCtx.body).toMatchObject({ id: createCtx.body.id, visibility: 'hidden', deletedAt: expect.any(String) })
+  })
 })

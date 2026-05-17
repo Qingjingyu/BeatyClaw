@@ -9,6 +9,10 @@ const mockEmployeesApi = vi.hoisted(() => ({
   deployEmployee: vi.fn(),
   startEmployee: vi.fn(),
   stopEmployee: vi.fn(),
+  hideEmployee: vi.fn(),
+  showEmployee: vi.fn(),
+  deleteEmployee: vi.fn(),
+  restoreEmployee: vi.fn(),
   checkEmployeeHealth: vi.fn(),
 }))
 
@@ -125,5 +129,39 @@ describe('Employees Store', () => {
     await store.checkEmployeeHealth('emp_1')
 
     expect(store.employees[0]).toMatchObject({ id: 'emp_1', status: 'running', healthStatus: 'healthy' })
+  })
+
+  it('filters visible employees and upserts lifecycle changes', async () => {
+    mockEmployeesApi.hideEmployee.mockResolvedValue({
+      id: 'emp_1',
+      name: '隐藏员工',
+      engineType: 'hms',
+      status: 'running',
+      visibility: 'hidden',
+      deletedAt: null,
+    })
+    mockEmployeesApi.deleteEmployee.mockResolvedValue({
+      id: 'emp_1',
+      name: '隐藏员工',
+      engineType: 'hms',
+      status: 'stopped',
+      healthStatus: 'stopped',
+      visibility: 'hidden',
+      deletedAt: '2026-05-17T00:00:00.000Z',
+    })
+
+    const store = useEmployeesStore()
+    store.employees.push(
+      { id: 'emp_1', name: '隐藏员工', engineType: 'hms', status: 'running', visibility: 'visible', deletedAt: null } as any,
+      { id: 'emp_2', name: '常用员工', engineType: 'hms', status: 'running', visibility: 'visible', deletedAt: null } as any,
+    )
+
+    expect(store.sidebarEmployees.map(employee => employee.id)).toEqual(['emp_1', 'emp_2'])
+
+    await store.hideEmployee('emp_1')
+    expect(store.sidebarEmployees.map(employee => employee.id)).toEqual(['emp_2'])
+
+    await store.deleteEmployee('emp_1')
+    expect(store.deletedEmployees.map(employee => employee.id)).toEqual(['emp_1'])
   })
 })

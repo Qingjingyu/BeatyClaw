@@ -8,6 +8,7 @@ import { getEngineDisplayLabel } from '@/utils/engine-display'
 const employeesStore = useEmployeesStore()
 const message = useMessage()
 const showCreateModal = ref(false)
+const filterKey = ref<'all' | 'visible' | 'hidden' | 'deleted'>('all')
 const form = reactive({
   name: '',
   engineType: 'openclaw' as EmployeeEngineType,
@@ -38,6 +39,18 @@ const healthStatusMap: Record<EmployeeHealthStatus, { label: string; type: 'defa
 }
 
 const currentId = computed(() => employeesStore.currentEmployeeId)
+const filteredEmployees = computed(() => {
+  if (filterKey.value === 'visible') return employeesStore.sidebarEmployees
+  if (filterKey.value === 'hidden') return employeesStore.hiddenEmployees
+  if (filterKey.value === 'deleted') return employeesStore.deletedEmployees
+  return employeesStore.employees
+})
+const filterOptions = computed(() => [
+  { key: 'all' as const, label: `全部 ${employeesStore.employees.length}` },
+  { key: 'visible' as const, label: `显示中 ${employeesStore.sidebarEmployees.length}` },
+  { key: 'hidden' as const, label: `已隐藏 ${employeesStore.hiddenEmployees.length}` },
+  { key: 'deleted' as const, label: `已删除 ${employeesStore.deletedEmployees.length}` },
+])
 
 onMounted(() => {
   employeesStore.loadEmployees()
@@ -99,6 +112,26 @@ async function checkHealth(employee: Employee) {
   await employeesStore.checkEmployeeHealth(employee.id)
   message.success(`${employee.name} 健康状态已刷新`)
 }
+
+async function hideEmployee(employee: Employee) {
+  await employeesStore.hideEmployee(employee.id)
+  message.success(`${employee.name} 已从侧边栏隐藏`)
+}
+
+async function showEmployee(employee: Employee) {
+  await employeesStore.showEmployee(employee.id)
+  message.success(`${employee.name} 已恢复到侧边栏`)
+}
+
+async function deleteEmployee(employee: Employee) {
+  await employeesStore.deleteEmployee(employee.id)
+  message.success(`${employee.name} 已移入已删除`)
+}
+
+async function restoreEmployee(employee: Employee) {
+  await employeesStore.restoreEmployee(employee.id)
+  message.success(`${employee.name} 已恢复`)
+}
 </script>
 
 <template>
@@ -116,14 +149,28 @@ async function checkHealth(employee: Employee) {
         {{ employeesStore.error }}
       </div>
 
+      <div class="filter-tabs">
+        <button
+          v-for="option in filterOptions"
+          :key="option.key"
+          type="button"
+          :class="{ active: filterKey === option.key }"
+          @click="filterKey = option.key"
+        >
+          {{ option.label }}
+        </button>
+      </div>
+
       <section class="employee-grid">
-        <article v-for="employee in employeesStore.employees" :key="employee.id" class="employee-card" :class="{ active: employee.id === currentId }">
+        <article v-for="employee in filteredEmployees" :key="employee.id" class="employee-card" :class="{ active: employee.id === currentId, deleted: Boolean(employee.deletedAt) }">
           <div class="card-main">
             <img :src="employee.avatar || '/logo.png'" :alt="employee.name" class="avatar" />
             <div>
               <div class="name-row">
                 <h3>{{ employee.name }}</h3>
                 <NTag v-if="employee.id === currentId" size="small" type="success" round>当前员工</NTag>
+                <NTag v-if="employee.visibility === 'hidden' && !employee.deletedAt" size="small" round>已隐藏</NTag>
+                <NTag v-if="employee.deletedAt" size="small" type="error" round>已删除</NTag>
               </div>
               <p>{{ employee.systemRole || '尚未设置系统角色' }}</p>
             </div>
@@ -168,24 +215,39 @@ async function checkHealth(employee: Employee) {
           </div>
 
           <div class="card-actions">
-            <NButton size="small" secondary :disabled="employee.id === currentId" @click="selectEmployee(employee)">
+            <NButton size="small" secondary :disabled="employee.id === currentId || Boolean(employee.deletedAt)" @click="selectEmployee(employee)">
               设为当前
             </NButton>
-            <NButton v-if="employee.status === 'draft' || employee.status === 'failed'" size="small" @click="deploy(employee)">
+            <NButton v-if="employee.deletedAt" size="small" @click="restoreEmployee(employee)">
+              恢复
+            </NButton>
+            <NButton v-else-if="employee.visibility === 'hidden'" size="small" @click="showEmployee(employee)">
+              显示
+            </NButton>
+            <NButton v-else size="small" quaternary @click="hideEmployee(employee)">
+              隐藏
+            </NButton>
+            <NButton v-if="!employee.deletedAt && (employee.status === 'draft' || employee.status === 'failed')" size="small" @click="deploy(employee)">
               模拟部署
             </NButton>
-            <NButton v-else-if="employee.status === 'installed' || employee.status === 'stopped'" size="small" @click="start(employee)">
+            <NButton v-else-if="!employee.deletedAt && (employee.status === 'installed' || employee.status === 'stopped')" size="small" @click="start(employee)">
               启动
             </NButton>
-            <NButton v-else-if="employee.status === 'running'" size="small" @click="stop(employee)">
+            <NButton v-else-if="!employee.deletedAt && employee.status === 'running'" size="small" @click="stop(employee)">
               停止
             </NButton>
-            <NButton size="small" quaternary @click="checkHealth(employee)">
+            <NButton v-if="!employee.deletedAt" size="small" quaternary @click="checkHealth(employee)">
               刷新健康
+            </NButton>
+            <NButton v-if="!employee.deletedAt" size="small" quaternary type="error" @click="deleteEmployee(employee)">
+              删除
             </NButton>
           </div>
         </article>
       </section>
+      <div v-if="filteredEmployees.length === 0" class="empty-panel">
+        当前筛选下暂无数字员工
+      </div>
     </NSpin>
 
     <NModal v-model:show="showCreateModal" preset="card" title="新增数字员工" class="employee-modal">
@@ -255,6 +317,33 @@ async function checkHealth(employee: Employee) {
   background: rgba(var(--error-rgb, 239, 68, 68), 0.06);
 }
 
+.filter-tabs {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  margin-bottom: 16px;
+  border: 1px solid $border-color;
+  border-radius: $radius-md;
+  background: $bg-card;
+
+  button {
+    border: none;
+    border-radius: $radius-sm;
+    padding: 7px 12px;
+    background: transparent;
+    color: $text-secondary;
+    font-size: 13px;
+    cursor: pointer;
+
+    &:hover,
+    &.active {
+      background: rgba(var(--accent-primary-rgb), 0.1);
+      color: $text-primary;
+    }
+  }
+}
+
 .employee-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
@@ -274,6 +363,10 @@ async function checkHealth(employee: Employee) {
   &.active {
     border-color: rgba(var(--accent-primary-rgb), 0.65);
     box-shadow: 0 0 0 1px rgba(var(--accent-primary-rgb), 0.12);
+  }
+
+  &.deleted {
+    opacity: 0.72;
   }
 }
 
@@ -375,6 +468,15 @@ async function checkHealth(employee: Employee) {
   justify-content: flex-end;
   gap: 8px;
   margin-top: auto;
+}
+
+.empty-panel {
+  padding: 28px;
+  border: 1px dashed $border-color;
+  border-radius: $radius-md;
+  color: $text-muted;
+  text-align: center;
+  background: $bg-card;
 }
 
 .form-stack {

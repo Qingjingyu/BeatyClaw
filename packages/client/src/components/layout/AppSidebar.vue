@@ -17,6 +17,7 @@ const selectedKey = computed(() => route.name as string);
 const logoPath = '/logo.png';
 const currentEmployee = computed(() => employeesStore.currentEmployee);
 const showCreatePanel = ref(false);
+const employeesCollapsed = ref(false);
 const createForm = reactive({
   name: '',
   engineType: 'hms' as EmployeeEngineType,
@@ -78,6 +79,14 @@ async function createEmployee() {
   showCreatePanel.value = false;
 }
 
+async function hideEmployee(employee: Employee) {
+  await employeesStore.hideEmployee(employee.id);
+}
+
+async function deleteEmployee(employee: Employee) {
+  await employeesStore.deleteEmployee(employee.id);
+}
+
 onMounted(() => {
   employeesStore.loadEmployees();
 });
@@ -100,15 +109,22 @@ onMounted(() => {
     <section class="employee-section">
       <div class="employee-section-header">
         <span>数字员工</span>
-        <button class="icon-action" type="button" title="新增数字员工" @click="showCreatePanel = !showCreatePanel">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M12 5v14" />
-            <path d="M5 12h14" />
-          </svg>
-        </button>
+        <span class="employee-section-actions">
+          <button class="icon-action" type="button" :title="employeesCollapsed ? '展开数字员工' : '折叠数字员工'" @click="employeesCollapsed = !employeesCollapsed">
+            <svg class="collapse-arrow" :class="{ collapsed: employeesCollapsed }" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="6 9 12 15 18 9" />
+            </svg>
+          </button>
+          <button class="icon-action" type="button" title="新增数字员工" @click="showCreatePanel = !showCreatePanel">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 5v14" />
+              <path d="M5 12h14" />
+            </svg>
+          </button>
+        </span>
       </div>
 
-      <form v-if="showCreatePanel && !appStore.sidebarCollapsed" class="employee-create-panel" @submit.prevent="createEmployee">
+      <form v-if="showCreatePanel && !appStore.sidebarCollapsed && !employeesCollapsed" class="employee-create-panel" @submit.prevent="createEmployee">
         <input v-model="createForm.name" type="text" placeholder="员工名称" />
         <select v-model="createForm.engineType">
           <option v-for="option in engineOptions" :key="option.value" :value="option.value">
@@ -120,9 +136,9 @@ onMounted(() => {
         </button>
       </form>
 
-      <div class="employee-list" :aria-busy="employeesStore.loading">
+      <div v-if="!employeesCollapsed" class="employee-list" :aria-busy="employeesStore.loading">
         <button
-          v-for="employee in employeesStore.employees"
+          v-for="employee in employeesStore.sidebarEmployees"
           :key="employee.id"
           type="button"
           class="employee-card"
@@ -136,11 +152,22 @@ onMounted(() => {
             <strong>{{ employee.name }}</strong>
             <small>{{ getEngineDisplayLabel(employee.engineType) }} · {{ getEngineStatusLabel(employee.status) }}</small>
           </span>
+          <span v-if="!appStore.sidebarCollapsed" class="employee-card-actions" @click.stop>
+            <button type="button" :title="`隐藏 ${employee.name}`" @click="hideEmployee(employee)">
+              隐藏
+            </button>
+            <button type="button" :title="`删除 ${employee.name}`" @click="deleteEmployee(employee)">
+              删除
+            </button>
+          </span>
         </button>
-        <div v-if="!employeesStore.loading && employeesStore.employees.length === 0" class="employee-empty">
+        <div v-if="!employeesStore.loading && employeesStore.sidebarEmployees.length === 0" class="employee-empty">
           暂无员工
         </div>
       </div>
+      <button v-else class="employee-collapsed-summary" type="button" @click="employeesCollapsed = false">
+        已折叠 {{ employeesStore.sidebarEmployees.length }} 个员工
+      </button>
     </section>
 
     <nav class="sidebar-nav">
@@ -408,6 +435,12 @@ onMounted(() => {
   font-weight: 600;
 }
 
+.employee-section-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .icon-action {
   display: inline-flex;
   align-items: center;
@@ -423,6 +456,14 @@ onMounted(() => {
   &:hover {
     color: $text-primary;
     border-color: rgba(var(--accent-primary-rgb), 0.45);
+  }
+}
+
+.collapse-arrow {
+  transition: transform $transition-fast;
+
+  &.collapsed {
+    transform: rotate(-90deg);
   }
 }
 
@@ -494,6 +535,32 @@ onMounted(() => {
   }
 }
 
+.employee-card-actions {
+  display: none;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+
+  button {
+    border: none;
+    border-radius: $radius-sm;
+    padding: 4px 5px;
+    background: rgba($text-muted, 0.1);
+    color: $text-muted;
+    font-size: 10px;
+    cursor: pointer;
+
+    &:hover {
+      color: $text-primary;
+      background: rgba(var(--accent-primary-rgb), 0.12);
+    }
+  }
+}
+
+.employee-card:hover .employee-card-actions {
+  display: inline-flex;
+}
+
 .employee-avatar {
   width: 30px;
   height: 30px;
@@ -544,6 +611,22 @@ onMounted(() => {
   padding: 12px;
   color: $text-muted;
   font-size: 12px;
+}
+
+.employee-collapsed-summary {
+  width: 100%;
+  border: 1px dashed $border-color;
+  border-radius: $radius-md;
+  padding: 10px;
+  background: transparent;
+  color: $text-muted;
+  font-size: 12px;
+  cursor: pointer;
+
+  &:hover {
+    color: $text-primary;
+    border-color: rgba(var(--accent-primary-rgb), 0.35);
+  }
 }
 
 .nav-group {

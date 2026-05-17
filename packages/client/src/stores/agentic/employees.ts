@@ -4,8 +4,12 @@ import {
   createEmployee as apiCreateEmployee,
   checkEmployeeHealth as apiCheckEmployeeHealth,
   deployEmployee as apiDeployEmployee,
+  deleteEmployee as apiDeleteEmployee,
   fetchEmployees,
+  hideEmployee as apiHideEmployee,
+  restoreEmployee as apiRestoreEmployee,
   selectEmployee as apiSelectEmployee,
+  showEmployee as apiShowEmployee,
   startEmployee as apiStartEmployee,
   stopEmployee as apiStopEmployee,
   type CreateEmployeePayload,
@@ -22,8 +26,15 @@ export const useEmployeesStore = defineStore('employees', () => {
   const cacheTtlMs = 10_000
 
   const currentEmployee = computed(() =>
-    employees.value.find(employee => employee.id === currentEmployeeId.value) || employees.value[0] || null,
+    employees.value.find(employee => employee.id === currentEmployeeId.value && !employee.deletedAt)
+    || employees.value.find(employee => !employee.deletedAt)
+    || null,
   )
+
+  const activeEmployees = computed(() => employees.value.filter(employee => !employee.deletedAt))
+  const sidebarEmployees = computed(() => activeEmployees.value.filter(employee => (employee.visibility || 'visible') === 'visible'))
+  const hiddenEmployees = computed(() => activeEmployees.value.filter(employee => employee.visibility === 'hidden'))
+  const deletedEmployees = computed(() => employees.value.filter(employee => Boolean(employee.deletedAt)))
 
   function applyList(payload: { currentEmployeeId: string; employees: Employee[] }) {
     employees.value = payload.employees
@@ -88,8 +99,28 @@ export const useEmployeesStore = defineStore('employees', () => {
     return result
   }
 
+  async function hideEmployee(id: string) {
+    upsertEmployee(await apiHideEmployee(id))
+  }
+
+  async function showEmployee(id: string) {
+    upsertEmployee(await apiShowEmployee(id))
+  }
+
+  async function deleteEmployee(id: string) {
+    upsertEmployee(await apiDeleteEmployee(id))
+  }
+
+  async function restoreEmployee(id: string) {
+    upsertEmployee(await apiRestoreEmployee(id))
+  }
+
   return {
     employees,
+    activeEmployees,
+    sidebarEmployees,
+    hiddenEmployees,
+    deletedEmployees,
     currentEmployeeId,
     currentEmployee,
     loading,
@@ -101,6 +132,10 @@ export const useEmployeesStore = defineStore('employees', () => {
     deployEmployee,
     startEmployee,
     stopEmployee,
+    hideEmployee,
+    showEmployee,
+    deleteEmployee,
+    restoreEmployee,
     checkEmployeeHealth,
   }
 })

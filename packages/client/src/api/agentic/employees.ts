@@ -3,6 +3,7 @@ import { request } from '../client'
 export type EmployeeStatus = 'draft' | 'deploying' | 'installed' | 'running' | 'stopped' | 'failed'
 export type EmployeeHealthStatus = 'unknown' | 'provisioning' | 'healthy' | 'stopped' | 'unhealthy'
 export type EmployeeEngineType = 'openclaw' | 'hms' | 'coco' | 'zylos'
+export type EmployeeVisibility = 'visible' | 'hidden'
 
 export interface Employee {
   id: string
@@ -16,6 +17,8 @@ export interface Employee {
   containerName: string
   port: number | null
   healthStatus: EmployeeHealthStatus
+  visibility: EmployeeVisibility
+  deletedAt: string | null
   createdAt: string
   updatedAt: string
 }
@@ -80,6 +83,30 @@ export function startEmployee(id: string): Promise<Employee> {
 
 export function stopEmployee(id: string): Promise<Employee> {
   return request<Employee>(`/api/employees/${encodeURIComponent(id)}/stop`, {
+    method: 'POST',
+  })
+}
+
+export function hideEmployee(id: string): Promise<Employee> {
+  return request<Employee>(`/api/employees/${encodeURIComponent(id)}/hide`, {
+    method: 'POST',
+  })
+}
+
+export function showEmployee(id: string): Promise<Employee> {
+  return request<Employee>(`/api/employees/${encodeURIComponent(id)}/show`, {
+    method: 'POST',
+  })
+}
+
+export function deleteEmployee(id: string): Promise<Employee> {
+  return request<Employee>(`/api/employees/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+  })
+}
+
+export function restoreEmployee(id: string): Promise<Employee> {
+  return request<Employee>(`/api/employees/${encodeURIComponent(id)}/restore`, {
     method: 'POST',
   })
 }

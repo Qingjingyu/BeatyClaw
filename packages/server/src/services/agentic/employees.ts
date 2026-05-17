@@ -7,6 +7,7 @@ import { createEmployeeRuntimeAdapter, type EmployeeRuntimeState } from './emplo
 export type EmployeeStatus = 'draft' | 'deploying' | 'installed' | 'running' | 'stopped' | 'failed'
 export type EmployeeHealthStatus = 'unknown' | 'provisioning' | 'healthy' | 'stopped' | 'unhealthy'
 export type EmployeeEngineType = 'openclaw' | 'hms' | 'coco' | 'zylos'
+export type EmployeeVisibility = 'visible' | 'hidden'
 
 export interface Employee {
   id: string
@@ -20,6 +21,8 @@ export interface Employee {
   containerName: string
   port: number | null
   healthStatus: EmployeeHealthStatus
+  visibility: EmployeeVisibility
+  deletedAt: string | null
   createdAt: string
   updatedAt: string
 }
@@ -45,6 +48,8 @@ export interface UpdateEmployeeInput {
   healthStatus?: EmployeeHealthStatus
   runtimeUrl?: string
   port?: number | null
+  visibility?: EmployeeVisibility
+  deletedAt?: string | null
 }
 
 export interface EmployeeHealthCheckResult {
@@ -94,6 +99,8 @@ function defaultEmployee(): Employee {
     containerName: getEmployeeContainerName(DEFAULT_EMPLOYEE_ID),
     port: null,
     healthStatus: 'unknown',
+    visibility: 'visible',
+    deletedAt: null,
     createdAt: now,
     updatedAt: now,
   }
@@ -111,6 +118,16 @@ function normalizeHealthStatus(value: unknown): EmployeeHealthStatus {
     return status
   }
   return 'unknown'
+}
+
+function normalizeVisibility(value: unknown): EmployeeVisibility {
+  return value === 'hidden' ? 'hidden' : 'visible'
+}
+
+function normalizeDeletedAt(value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  const trimmed = value.trim()
+  return trimmed ? trimmed : null
 }
 
 function normalizePort(value: unknown): number | null {
@@ -134,6 +151,8 @@ function normalizeEmployee(item: any): Employee | null {
     containerName: String(item.containerName || item.container_name || getEmployeeContainerName(item.id)),
     port: normalizePort(item.port),
     healthStatus: normalizeHealthStatus(item.healthStatus || item.health_status),
+    visibility: normalizeVisibility(item.visibility),
+    deletedAt: normalizeDeletedAt(item.deletedAt || item.deleted_at),
     createdAt: String(item.createdAt || item.created_at || nowIso()),
     updatedAt: String(item.updatedAt || item.updated_at || nowIso()),
   }
@@ -149,7 +168,8 @@ function normalizeStore(parsed: any): EmployeeStore {
     normalized.unshift(defaultEmployee())
   }
 
-  const currentEmployeeId = normalized.some((item: Employee) => item.id === parsed?.currentEmployeeId)
+  const selectable = normalized.filter((item: Employee) => !item.deletedAt)
+  const currentEmployeeId = selectable.some((item: Employee) => item.id === parsed?.currentEmployeeId)
     ? parsed.currentEmployeeId
     : DEFAULT_EMPLOYEE_ID
 
@@ -233,6 +253,8 @@ export async function createEmployee(input: CreateEmployeeInput): Promise<Employ
     containerName: '',
     port: null,
     healthStatus: 'unknown',
+    visibility: 'visible',
+    deletedAt: null,
     createdAt: now,
     updatedAt: now,
   }
@@ -255,6 +277,8 @@ export async function updateEmployee(id: string, input: UpdateEmployeeInput): Pr
   if (input.healthStatus !== undefined) employee.healthStatus = normalizeHealthStatus(input.healthStatus)
   if (input.runtimeUrl !== undefined) employee.runtimeUrl = String(input.runtimeUrl || '').trim()
   if (input.port !== undefined) employee.port = normalizePort(input.port)
+  if (input.visibility !== undefined) employee.visibility = normalizeVisibility(input.visibility)
+  if (input.deletedAt !== undefined) employee.deletedAt = normalizeDeletedAt(input.deletedAt)
   employee.updatedAt = nowIso()
   await ensureEmployeeInstanceDirs(employee)
   await writeStore(store)
@@ -263,9 +287,41 @@ export async function updateEmployee(id: string, input: UpdateEmployeeInput): Pr
 
 export async function selectEmployee(id: string): Promise<EmployeeStore> {
   const store = await listEmployees()
-  findEmployeeOrThrow(store, id)
+  const employee = findEmployeeOrThrow(store, id)
+  if (employee.deletedAt) throw new Error('Employee is deleted')
   store.currentEmployeeId = id
   return writeStore(store)
+}
+
+function firstActiveEmployee(store: EmployeeStore): Employee {
+  return store.employees.find(item => !item.deletedAt) || store.employees[0]
+}
+
+export async function hideEmployee(id: string): Promise<Employee> {
+  return updateEmployee(id, { visibility: 'hidden' })
+}
+
+export async function showEmployee(id: string): Promise<Employee> {
+  return updateEmployee(id, { visibility: 'visible', deletedAt: null })
+}
+
+export async function softDeleteEmployee(id: string): Promise<Employee> {
+  const store = await listEmployees()
+  const employee = findEmployeeOrThrow(store, id)
+  employee.visibility = 'hidden'
+  employee.deletedAt = nowIso()
+  employee.status = 'stopped'
+  employee.healthStatus = 'stopped'
+  employee.updatedAt = nowIso()
+  if (store.currentEmployeeId === id) {
+    store.currentEmployeeId = firstActiveEmployee(store).id
+  }
+  await writeStore(store)
+  return employee
+}
+
+export async function restoreEmployee(id: string): Promise<Employee> {
+  return updateEmployee(id, { visibility: 'visible', deletedAt: null })
 }
 
 export async function deployEmployee(id: string): Promise<Employee> {

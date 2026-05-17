@@ -26,6 +26,37 @@ const mockEmployeesStore = vi.hoisted(() => ({
       engineType: 'hms',
       status: 'running',
       avatar: '',
+      visibility: 'visible',
+      deletedAt: null,
+    },
+    {
+      id: 'emp_hidden',
+      name: '隐藏员工',
+      engineType: 'hms',
+      status: 'running',
+      avatar: '',
+      visibility: 'hidden',
+      deletedAt: null,
+    },
+  ],
+  sidebarEmployees: [
+    {
+      id: 'emp_coco',
+      name: '苏白',
+      engineType: 'zylos',
+      status: 'running',
+      avatar: '',
+      visibility: 'visible',
+      deletedAt: null,
+    },
+    {
+      id: 'emp_hms',
+      name: 'HMS 自动配置员工',
+      engineType: 'hms',
+      status: 'running',
+      avatar: '',
+      visibility: 'visible',
+      deletedAt: null,
     },
   ],
   currentEmployeeId: 'emp_coco',
@@ -41,6 +72,8 @@ const mockEmployeesStore = vi.hoisted(() => ({
   loadEmployees: vi.fn(),
   selectEmployee: vi.fn(),
   createEmployee: vi.fn(),
+  hideEmployee: vi.fn(),
+  deleteEmployee: vi.fn(),
 }))
 
 vi.mock('@/stores/hermes/app', () => ({
@@ -91,6 +124,7 @@ describe('AppSidebar employees', () => {
     expect(wrapper.text()).toContain('数字员工')
     expect(wrapper.text()).toContain('苏白')
     expect(wrapper.text()).toContain('COCO · 运行中')
+    expect(wrapper.text()).not.toContain('隐藏员工')
     expect(wrapper.text()).not.toContain('zylos')
   })
 
@@ -113,5 +147,26 @@ describe('AppSidebar employees', () => {
       name: 'hermes.chat',
       query: { employee_id: 'emp_hms' },
     })
+  })
+
+  it('collapses the employee list and exposes quick management actions', async () => {
+    const wrapper = mount(AppSidebar, {
+      global: {
+        stubs: {
+          LanguageSwitch: true,
+        },
+      },
+    })
+
+    const collapseButton = wrapper.find('button[title="折叠数字员工"]')
+    expect(collapseButton.exists()).toBe(true)
+    await collapseButton.trigger('click')
+    expect(wrapper.text()).not.toContain('HMS 自动配置员工')
+
+    await collapseButton.trigger('click')
+    const hideButton = wrapper.find('button[title="隐藏 苏白"]')
+    expect(hideButton.exists()).toBe(true)
+    await hideButton.trigger('click')
+    expect(mockEmployeesStore.hideEmployee).toHaveBeenCalledWith('emp_coco')
   })
 })

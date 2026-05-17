@@ -4,8 +4,12 @@ import {
   deployEmployee,
   getCurrentEmployee,
   getEmployee,
+  hideEmployee,
   listEmployees,
+  restoreEmployee,
   selectEmployee,
+  showEmployee,
+  softDeleteEmployee,
   startEmployee,
   stopEmployee,
   updateEmployee,
@@ -47,6 +51,22 @@ export async function create(ctx: any) {
 
 export async function update(ctx: any) {
   await handle(ctx, () => updateEmployee(idParam(ctx), body(ctx) as any))
+}
+
+export async function hide(ctx: any) {
+  await handle(ctx, () => hideEmployee(idParam(ctx)))
+}
+
+export async function show(ctx: any) {
+  await handle(ctx, () => showEmployee(idParam(ctx)))
+}
+
+export async function remove(ctx: any) {
+  await handle(ctx, () => softDeleteEmployee(idParam(ctx)))
+}
+
+export async function restore(ctx: any) {
+  await handle(ctx, () => restoreEmployee(idParam(ctx)))
 }
 
 export async function deploy(ctx: any) {

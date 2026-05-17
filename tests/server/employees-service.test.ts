@@ -109,4 +109,45 @@ describe('Employees service', () => {
       healthStatus: 'stopped',
     })
   })
+
+  it('hides, restores, and soft deletes employees without removing instance data', async () => {
+    const service = await import('../../packages/server/src/services/agentic/employees')
+
+    const first = await service.createEmployee({ name: '常用员工', engineType: 'hms' })
+    const second = await service.createEmployee({ name: '待删除员工', engineType: 'hms' })
+    await service.selectEmployee(second.id)
+
+    expect(await service.hideEmployee(first.id)).toMatchObject({
+      id: first.id,
+      visibility: 'hidden',
+      deletedAt: null,
+    })
+    expect((await service.listEmployees()).employees.find(employee => employee.id === first.id)).toMatchObject({
+      visibility: 'hidden',
+    })
+
+    expect(await service.showEmployee(first.id)).toMatchObject({
+      id: first.id,
+      visibility: 'visible',
+      deletedAt: null,
+    })
+
+    const deleted = await service.softDeleteEmployee(second.id)
+    expect(deleted).toMatchObject({
+      id: second.id,
+      visibility: 'hidden',
+      deletedAt: expect.any(String),
+      status: 'stopped',
+      healthStatus: 'stopped',
+    })
+    await expect(stat(join(second.instanceRoot, 'workspace'))).resolves.toBeTruthy()
+    expect((await service.getCurrentEmployee()).id).not.toBe(second.id)
+
+    const restored = await service.restoreEmployee(second.id)
+    expect(restored).toMatchObject({
+      id: second.id,
+      visibility: 'visible',
+      deletedAt: null,
+    })
+  })
 })
