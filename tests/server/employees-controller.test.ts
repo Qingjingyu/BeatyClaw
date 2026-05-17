@@ -32,6 +32,9 @@ describe('Employees controller', () => {
         expect.objectContaining({
           id: 'default',
           name: 'BeatyClaw 数字员工',
+          instanceRoot: join(authHome, 'employees', 'default'),
+          containerName: 'beautyclaw-employee-default',
+          healthStatus: 'unknown',
         }),
       ],
     })
@@ -56,6 +59,9 @@ describe('Employees controller', () => {
       name: '销售小白',
       engineType: 'openclaw',
       status: 'draft',
+      instanceRoot: expect.stringContaining('/employees/emp_'),
+      containerName: expect.stringContaining('beautyclaw-employee-emp_'),
+      healthStatus: 'unknown',
     })
   })
 })

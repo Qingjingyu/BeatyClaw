@@ -2,7 +2,7 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { NButton, NInput, NModal, NSelect, NSpin, NTag, useMessage } from 'naive-ui'
 import { useEmployeesStore } from '@/stores/agentic/employees'
-import type { Employee, EmployeeEngineType, EmployeeStatus } from '@/api/agentic/employees'
+import type { Employee, EmployeeEngineType, EmployeeHealthStatus, EmployeeStatus } from '@/api/agentic/employees'
 
 const employeesStore = useEmployeesStore()
 const message = useMessage()
@@ -29,6 +29,14 @@ const statusMap: Record<EmployeeStatus, { label: string; type: 'default' | 'info
   failed: { label: '失败', type: 'error' },
 }
 
+const healthStatusMap: Record<EmployeeHealthStatus, { label: string; type: 'default' | 'info' | 'success' | 'warning' | 'error' }> = {
+  unknown: { label: '未检查', type: 'default' },
+  provisioning: { label: '预留目录中', type: 'info' },
+  healthy: { label: '健康', type: 'success' },
+  stopped: { label: '已停止', type: 'warning' },
+  unhealthy: { label: '异常', type: 'error' },
+}
+
 const currentId = computed(() => employeesStore.currentEmployeeId)
 
 onMounted(() => {
@@ -41,6 +49,10 @@ function engineLabel(engine: string) {
 
 function statusInfo(status: EmployeeStatus) {
   return statusMap[status] || statusMap.draft
+}
+
+function healthInfo(status: EmployeeHealthStatus) {
+  return healthStatusMap[status] || healthStatusMap.unknown
 }
 
 function resetForm() {
@@ -121,6 +133,31 @@ async function stop(employee: Employee) {
               <span>状态</span>
               <NTag :type="statusInfo(employee.status).type" size="small" round>
                 {{ statusInfo(employee.status).label }}
+              </NTag>
+            </div>
+          </div>
+
+          <div class="instance-panel">
+            <div>
+              <span>实例目录</span>
+              <strong :title="employee.instanceRoot">{{ employee.instanceRoot }}</strong>
+            </div>
+            <div>
+              <span>容器名</span>
+              <strong :title="employee.containerName">{{ employee.containerName }}</strong>
+            </div>
+            <div>
+              <span>端口</span>
+              <strong>{{ employee.port || '待分配' }}</strong>
+            </div>
+            <div>
+              <span>Runtime</span>
+              <strong :title="employee.runtimeUrl">{{ employee.runtimeUrl || '待启动' }}</strong>
+            </div>
+            <div>
+              <span>健康</span>
+              <NTag :type="healthInfo(employee.healthStatus).type" size="small" round>
+                {{ healthInfo(employee.healthStatus).label }}
               </NTag>
             </div>
           </div>
@@ -289,6 +326,38 @@ async function stop(employee: Employee) {
   strong {
     color: $text-primary;
     font-size: 14px;
+  }
+}
+
+.instance-panel {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid $border-color;
+  border-radius: $radius-sm;
+  background: rgba(var(--accent-primary-rgb), 0.025);
+
+  div {
+    display: grid;
+    grid-template-columns: 72px minmax(0, 1fr);
+    gap: 10px;
+    align-items: center;
+    min-width: 0;
+  }
+
+  span {
+    color: $text-muted;
+    font-size: 12px;
+  }
+
+  strong {
+    min-width: 0;
+    overflow: hidden;
+    color: $text-primary;
+    font-size: 12px;
+    font-weight: 550;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 }
 

@@ -25,8 +25,28 @@ describe('Employees Store', () => {
     mockEmployeesApi.fetchEmployees.mockResolvedValue({
       currentEmployeeId: 'emp_1',
       employees: [
-        { id: 'default', name: 'BeatyClaw 数字员工', engineType: 'openclaw', status: 'draft' },
-        { id: 'emp_1', name: '客服小美', engineType: 'hms', status: 'installed' },
+        {
+          id: 'default',
+          name: 'BeatyClaw 数字员工',
+          engineType: 'openclaw',
+          status: 'draft',
+          instanceRoot: '/tmp/employees/default',
+          runtimeUrl: '',
+          containerName: 'beautyclaw-employee-default',
+          port: null,
+          healthStatus: 'unknown',
+        },
+        {
+          id: 'emp_1',
+          name: '客服小美',
+          engineType: 'hms',
+          status: 'installed',
+          instanceRoot: '/tmp/employees/emp_1',
+          runtimeUrl: '',
+          containerName: 'beautyclaw-employee-emp_1',
+          port: null,
+          healthStatus: 'stopped',
+        },
       ],
     })
 
@@ -43,6 +63,11 @@ describe('Employees Store', () => {
       name: '销售小白',
       engineType: 'openclaw',
       status: 'draft',
+      instanceRoot: '/tmp/employees/emp_1',
+      runtimeUrl: '',
+      containerName: 'beautyclaw-employee-emp_1',
+      port: null,
+      healthStatus: 'unknown',
     })
 
     const store = useEmployeesStore()

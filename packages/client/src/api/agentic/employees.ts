@@ -1,6 +1,7 @@
 import { request } from '../client'
 
 export type EmployeeStatus = 'draft' | 'deploying' | 'installed' | 'running' | 'stopped' | 'failed'
+export type EmployeeHealthStatus = 'unknown' | 'provisioning' | 'healthy' | 'stopped' | 'unhealthy'
 export type EmployeeEngineType = 'openclaw' | 'hms' | 'coco' | 'zylos'
 
 export interface Employee {
@@ -10,6 +11,11 @@ export interface Employee {
   engineType: EmployeeEngineType
   status: EmployeeStatus
   systemRole: string
+  instanceRoot: string
+  runtimeUrl: string
+  containerName: string
+  port: number | null
+  healthStatus: EmployeeHealthStatus
   createdAt: string
   updatedAt: string
 }

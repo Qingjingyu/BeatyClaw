@@ -4,6 +4,7 @@ import { homedir } from 'os'
 import { randomBytes } from 'node:crypto'
 
 export type EmployeeStatus = 'draft' | 'deploying' | 'installed' | 'running' | 'stopped' | 'failed'
+export type EmployeeHealthStatus = 'unknown' | 'provisioning' | 'healthy' | 'stopped' | 'unhealthy'
 export type EmployeeEngineType = 'openclaw' | 'hms' | 'coco' | 'zylos'
 
 export interface Employee {
@@ -13,6 +14,11 @@ export interface Employee {
   engineType: EmployeeEngineType
   status: EmployeeStatus
   systemRole: string
+  instanceRoot: string
+  runtimeUrl: string
+  containerName: string
+  port: number | null
+  healthStatus: EmployeeHealthStatus
   createdAt: string
   updatedAt: string
 }
@@ -35,6 +41,9 @@ export interface UpdateEmployeeInput {
   engineType?: EmployeeEngineType
   systemRole?: string
   status?: EmployeeStatus
+  healthStatus?: EmployeeHealthStatus
+  runtimeUrl?: string
+  port?: number | null
 }
 
 const DEFAULT_EMPLOYEE_ID = 'default'
@@ -47,6 +56,18 @@ function getEmployeeHome(): string {
 
 function getStorePath(): string {
   return join(getEmployeeHome(), 'beautyclaw-employees.json')
+}
+
+function getEmployeeInstancesRoot(): string {
+  return process.env.BEATYCLAW_EMPLOYEES_ROOT || join(getEmployeeHome(), 'employees')
+}
+
+function getEmployeeInstanceRoot(id: string): string {
+  return join(getEmployeeInstancesRoot(), id)
+}
+
+function getEmployeeContainerName(id: string): string {
+  return `beautyclaw-employee-${id.replace(/[^a-zA-Z0-9_.-]/g, '-')}`
 }
 
 function nowIso(): string {
@@ -62,6 +83,11 @@ function defaultEmployee(): Employee {
     engineType: 'openclaw',
     status: 'draft',
     systemRole: DEFAULT_SYSTEM_ROLE,
+    instanceRoot: getEmployeeInstanceRoot(DEFAULT_EMPLOYEE_ID),
+    runtimeUrl: '',
+    containerName: getEmployeeContainerName(DEFAULT_EMPLOYEE_ID),
+    port: null,
+    healthStatus: 'unknown',
     createdAt: now,
     updatedAt: now,
   }
@@ -73,20 +99,45 @@ function normalizeEngine(value: unknown): EmployeeEngineType {
   return 'openclaw'
 }
 
+function normalizeHealthStatus(value: unknown): EmployeeHealthStatus {
+  const status = String(value || '').trim()
+  if (status === 'unknown' || status === 'provisioning' || status === 'healthy' || status === 'stopped' || status === 'unhealthy') {
+    return status
+  }
+  return 'unknown'
+}
+
+function normalizePort(value: unknown): number | null {
+  if (value === null || value === undefined || value === '') return null
+  const port = Number(value)
+  if (!Number.isInteger(port) || port <= 0 || port > 65535) return null
+  return port
+}
+
+function normalizeEmployee(item: any): Employee | null {
+  if (!item || typeof item.id !== 'string' || typeof item.name !== 'string') return null
+  return {
+    id: item.id,
+    name: item.name,
+    avatar: item.avatar || undefined,
+    engineType: normalizeEngine(item.engineType || item.engine_type),
+    status: normalizeStatus(item.status),
+    systemRole: String(item.systemRole || item.system_role || ''),
+    instanceRoot: String(item.instanceRoot || item.instance_root || getEmployeeInstanceRoot(item.id)),
+    runtimeUrl: String(item.runtimeUrl || item.runtime_url || ''),
+    containerName: String(item.containerName || item.container_name || getEmployeeContainerName(item.id)),
+    port: normalizePort(item.port),
+    healthStatus: normalizeHealthStatus(item.healthStatus || item.health_status),
+    createdAt: String(item.createdAt || item.created_at || nowIso()),
+    updatedAt: String(item.updatedAt || item.updated_at || nowIso()),
+  }
+}
+
 function normalizeStore(parsed: any): EmployeeStore {
   const employees = Array.isArray(parsed?.employees) ? parsed.employees : []
   const normalized = employees
-    .filter((item: any) => item && typeof item.id === 'string' && typeof item.name === 'string')
-    .map((item: any) => ({
-      id: item.id,
-      name: item.name,
-      avatar: item.avatar || undefined,
-      engineType: normalizeEngine(item.engineType || item.engine_type),
-      status: normalizeStatus(item.status),
-      systemRole: String(item.systemRole || item.system_role || ''),
-      createdAt: String(item.createdAt || item.created_at || nowIso()),
-      updatedAt: String(item.updatedAt || item.updated_at || nowIso()),
-    }))
+    .map(normalizeEmployee)
+    .filter((item: Employee | null): item is Employee => Boolean(item))
 
   if (!normalized.some((item: Employee) => item.id === DEFAULT_EMPLOYEE_ID)) {
     normalized.unshift(defaultEmployee())
@@ -121,6 +172,14 @@ async function writeStore(store: EmployeeStore): Promise<EmployeeStore> {
   return store
 }
 
+export function getEmployeeInstancePaths(employee: Employee): string[] {
+  return ['config', 'data', 'logs', 'workspace'].map(name => join(employee.instanceRoot, name))
+}
+
+async function ensureEmployeeInstanceDirs(employee: Employee): Promise<void> {
+  await Promise.all(getEmployeeInstancePaths(employee).map(path => mkdir(path, { recursive: true })))
+}
+
 function requireName(name: unknown): string {
   const value = String(name || '').trim()
   if (!value) throw new Error('Employee name is required')
@@ -139,6 +198,7 @@ function findEmployeeOrThrow(store: EmployeeStore, id: string): Employee {
 
 export async function listEmployees(): Promise<EmployeeStore> {
   const store = await readStore()
+  await Promise.all(store.employees.map(ensureEmployeeInstanceDirs))
   return writeStore(store)
 }
 
@@ -162,9 +222,17 @@ export async function createEmployee(input: CreateEmployeeInput): Promise<Employ
     engineType: normalizeEngine(input.engineType),
     status: 'draft',
     systemRole: String(input.systemRole || '').trim(),
+    instanceRoot: '',
+    runtimeUrl: '',
+    containerName: '',
+    port: null,
+    healthStatus: 'unknown',
     createdAt: now,
     updatedAt: now,
   }
+  employee.instanceRoot = getEmployeeInstanceRoot(employee.id)
+  employee.containerName = getEmployeeContainerName(employee.id)
+  await ensureEmployeeInstanceDirs(employee)
   store.employees.push(employee)
   await writeStore(store)
   return employee
@@ -178,7 +246,11 @@ export async function updateEmployee(id: string, input: UpdateEmployeeInput): Pr
   if (input.engineType !== undefined) employee.engineType = normalizeEngine(input.engineType)
   if (input.systemRole !== undefined) employee.systemRole = String(input.systemRole || '').trim()
   if (input.status !== undefined) employee.status = normalizeStatus(input.status)
+  if (input.healthStatus !== undefined) employee.healthStatus = normalizeHealthStatus(input.healthStatus)
+  if (input.runtimeUrl !== undefined) employee.runtimeUrl = String(input.runtimeUrl || '').trim()
+  if (input.port !== undefined) employee.port = normalizePort(input.port)
   employee.updatedAt = nowIso()
+  await ensureEmployeeInstanceDirs(employee)
   await writeStore(store)
   return employee
 }
@@ -191,14 +263,14 @@ export async function selectEmployee(id: string): Promise<EmployeeStore> {
 }
 
 export async function deployEmployee(id: string): Promise<Employee> {
-  await updateEmployee(id, { status: 'deploying' })
-  return updateEmployee(id, { status: 'installed' })
+  await updateEmployee(id, { status: 'deploying', healthStatus: 'provisioning' })
+  return updateEmployee(id, { status: 'installed', healthStatus: 'stopped' })
 }
 
 export async function startEmployee(id: string): Promise<Employee> {
-  return updateEmployee(id, { status: 'running' })
+  return updateEmployee(id, { status: 'running', healthStatus: 'healthy' })
 }
 
 export async function stopEmployee(id: string): Promise<Employee> {
-  return updateEmployee(id, { status: 'stopped' })
+  return updateEmployee(id, { status: 'stopped', healthStatus: 'stopped' })
 }

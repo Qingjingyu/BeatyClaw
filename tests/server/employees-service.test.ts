@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { mkdtemp, rm } from 'fs/promises'
+import { mkdtemp, rm, stat } from 'fs/promises'
 import { tmpdir } from 'os'
 import { join } from 'path'
 
@@ -32,7 +32,16 @@ describe('Employees service', () => {
       name: 'BeatyClaw 数字员工',
       engineType: 'openclaw',
       status: 'draft',
+      instanceRoot: join(authHome, 'employees', 'default'),
+      containerName: 'beautyclaw-employee-default',
+      port: null,
+      runtimeUrl: '',
+      healthStatus: 'unknown',
     })
+    await expect(stat(join(authHome, 'employees', 'default', 'config'))).resolves.toBeTruthy()
+    await expect(stat(join(authHome, 'employees', 'default', 'data'))).resolves.toBeTruthy()
+    await expect(stat(join(authHome, 'employees', 'default', 'logs'))).resolves.toBeTruthy()
+    await expect(stat(join(authHome, 'employees', 'default', 'workspace'))).resolves.toBeTruthy()
   })
 
   it('creates, selects, deploys, starts, and stops an employee', async () => {
@@ -49,13 +58,22 @@ describe('Employees service', () => {
       engineType: 'hms',
       status: 'draft',
       systemRole: '你是客服数字员工。',
+      instanceRoot: join(authHome, 'employees', employee.id),
+      containerName: `beautyclaw-employee-${employee.id}`,
+      port: null,
+      runtimeUrl: '',
+      healthStatus: 'unknown',
     })
+    await expect(stat(join(employee.instanceRoot, 'config'))).resolves.toBeTruthy()
+    await expect(stat(join(employee.instanceRoot, 'data'))).resolves.toBeTruthy()
+    await expect(stat(join(employee.instanceRoot, 'logs'))).resolves.toBeTruthy()
+    await expect(stat(join(employee.instanceRoot, 'workspace'))).resolves.toBeTruthy()
 
     await service.selectEmployee(employee.id)
     expect((await service.getCurrentEmployee()).id).toBe(employee.id)
 
-    expect(await service.deployEmployee(employee.id)).toMatchObject({ id: employee.id, status: 'installed' })
-    expect(await service.startEmployee(employee.id)).toMatchObject({ id: employee.id, status: 'running' })
-    expect(await service.stopEmployee(employee.id)).toMatchObject({ id: employee.id, status: 'stopped' })
+    expect(await service.deployEmployee(employee.id)).toMatchObject({ id: employee.id, status: 'installed', healthStatus: 'stopped' })
+    expect(await service.startEmployee(employee.id)).toMatchObject({ id: employee.id, status: 'running', healthStatus: 'healthy' })
+    expect(await service.stopEmployee(employee.id)).toMatchObject({ id: employee.id, status: 'stopped', healthStatus: 'stopped' })
   })
 })
