@@ -48,6 +48,32 @@ export const useEmployeesStore = defineStore('employees', () => {
     else employees.value[index] = employee
   }
 
+  function removeEmployee(id: string) {
+    employees.value = employees.value.filter(employee => employee.id !== id)
+  }
+
+  function createPendingEmployee(payload: CreateEmployeePayload): Employee {
+    const now = new Date().toISOString()
+    const id = `pending_${Date.now()}_${Math.random().toString(16).slice(2)}`
+    return {
+      id,
+      name: payload.name.trim(),
+      avatar: payload.avatar?.trim() || undefined,
+      engineType: payload.engineType,
+      status: 'deploying',
+      systemRole: payload.systemRole?.trim() || '',
+      instanceRoot: '正在分配',
+      runtimeUrl: '',
+      containerName: '正在分配',
+      port: null,
+      healthStatus: 'provisioning',
+      visibility: 'visible',
+      deletedAt: null,
+      createdAt: now,
+      updatedAt: now,
+    }
+  }
+
   async function loadEmployees(options: { force?: boolean } = {}) {
     if (!options.force && employees.value.length > 0 && Date.now() - lastLoadedAt.value < cacheTtlMs) {
       return
@@ -67,11 +93,22 @@ export const useEmployeesStore = defineStore('employees', () => {
   async function createEmployee(payload: CreateEmployeePayload) {
     saving.value = true
     error.value = ''
+    const pendingEmployee = createPendingEmployee(payload)
+    upsertEmployee(pendingEmployee)
     try {
       const employee = await apiCreateEmployee(payload)
+      removeEmployee(pendingEmployee.id)
       upsertEmployee(employee)
       lastLoadedAt.value = Date.now()
       return employee
+    } catch (err) {
+      upsertEmployee({
+        ...pendingEmployee,
+        status: 'failed',
+        healthStatus: 'unhealthy',
+        updatedAt: new Date().toISOString(),
+      })
+      throw err
     } finally {
       saving.value = false
     }

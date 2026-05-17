@@ -173,6 +173,35 @@ async function writeHmsPlaceholderLauncher(employee: Employee, port: number): Pr
   return launcherPath
 }
 
+async function writeGenericPlaceholderLauncher(employee: Employee, port: number): Promise<string> {
+  const binDir = join(employee.instanceRoot, 'bin')
+  await mkdir(binDir, { recursive: true })
+  const launcherPath = join(binDir, `start-${employee.engineType}-placeholder.mjs`)
+  await writeFile(
+    launcherPath,
+    [
+      "import http from 'node:http'",
+      `const port = ${port}`,
+      `const engine = ${JSON.stringify(employee.engineType)}`,
+      "const server = http.createServer((req, res) => {",
+      "  if (req.url === '/health') {",
+      "    res.writeHead(200, { 'content-type': 'application/json' })",
+      "    res.end(JSON.stringify({ status: 'ok', engine, employeeId: process.env.BEATYCLAW_EMPLOYEE_ID || '' }))",
+      '    return',
+      '  }',
+      "  res.writeHead(404, { 'content-type': 'application/json' })",
+      "  res.end(JSON.stringify({ error: 'not_found' }))",
+      '})',
+      "server.listen(port, '127.0.0.1')",
+      "process.on('SIGTERM', () => server.close(() => process.exit(0)))",
+      '',
+    ].join('\n'),
+    { mode: 0o700 },
+  )
+  await chmod(launcherPath, 0o700)
+  return launcherPath
+}
+
 export async function installEmployeeRuntime(employee: Employee): Promise<EmployeeRuntimeInstallManifest> {
   if (employee.engineType !== 'hms') {
     return installGenericRuntime(employee)
@@ -184,7 +213,9 @@ async function installGenericRuntime(employee: Employee): Promise<EmployeeRuntim
   const port = parsePort(process.env[getInstallerEnvKey(employee.engineType, 'PORT')], defaultPort(employee))
   const healthUrl = String(process.env[getInstallerEnvKey(employee.engineType, 'HEALTH_URL')] || `http://127.0.0.1:${port}/health`)
   const startCommand = String(process.env[getInstallerEnvKey(employee.engineType, 'START_COMMAND')] || process.execPath)
-  const startArgs = splitArgs(String(process.env[getInstallerEnvKey(employee.engineType, 'START_ARGS')] || ''))
+  const configuredArgs = splitArgs(String(process.env[getInstallerEnvKey(employee.engineType, 'START_ARGS')] || ''))
+  const launcherPath = configuredArgs.length > 0 ? '' : await writeGenericPlaceholderLauncher(employee, port)
+  const startArgs = configuredArgs.length > 0 ? configuredArgs : [launcherPath]
   return writeInstallManifest(employee, {
     employeeId: employee.id,
     engineType: employee.engineType,
@@ -196,7 +227,7 @@ async function installGenericRuntime(employee: Employee): Promise<EmployeeRuntim
     healthUrl,
     apiKey: '',
     installedAt: nowIso(),
-    installMode: startArgs.length > 0 ? 'custom' : 'placeholder',
+    installMode: configuredArgs.length > 0 ? 'custom' : 'placeholder',
   })
 }
 

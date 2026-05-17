@@ -57,6 +57,11 @@ export interface EmployeeHealthCheckResult {
   runtime: EmployeeRuntimeState
 }
 
+export interface ProvisionEmployeeOptions {
+  healthAttempts?: number
+  healthIntervalMs?: number
+}
+
 const DEFAULT_EMPLOYEE_ID = 'default'
 const DEFAULT_SYSTEM_ROLE = '你是 BeatyClaw 数字员工，负责帮助用户整理信息、推进任务和完成工作。'
 const VALID_ENGINES: EmployeeEngineType[] = ['openclaw', 'hms', 'coco', 'zylos']
@@ -264,6 +269,40 @@ export async function createEmployee(input: CreateEmployeeInput): Promise<Employ
   store.employees.push(employee)
   await writeStore(store)
   return employee
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms))
+}
+
+async function markEmployeeProvisionFailed(id: string): Promise<Employee> {
+  return updateEmployee(id, { status: 'failed', healthStatus: 'unhealthy' })
+}
+
+export async function createProvisionedEmployee(input: CreateEmployeeInput, options: ProvisionEmployeeOptions = {}): Promise<Employee> {
+  const employee = await createEmployee(input)
+  const healthAttempts = Math.max(1, options.healthAttempts ?? 10)
+  const healthIntervalMs = Math.max(0, options.healthIntervalMs ?? 80)
+
+  try {
+    await deployEmployee(employee.id)
+    const started = await startEmployee(employee.id)
+    if (started.status !== 'running') return markEmployeeProvisionFailed(employee.id)
+
+    let latest: EmployeeHealthCheckResult | null = null
+    for (let attempt = 0; attempt < healthAttempts; attempt += 1) {
+      latest = await checkEmployeeHealth(employee.id)
+      if (latest.employee.status === 'running' && latest.employee.healthStatus === 'healthy') {
+        return latest.employee
+      }
+      if (attempt < healthAttempts - 1 && healthIntervalMs > 0) await sleep(healthIntervalMs)
+    }
+    return latest?.employee.status === 'running' && latest.employee.healthStatus === 'healthy'
+      ? latest.employee
+      : markEmployeeProvisionFailed(employee.id)
+  } catch {
+    return markEmployeeProvisionFailed(employee.id)
+  }
 }
 
 export async function updateEmployee(id: string, input: UpdateEmployeeInput): Promise<Employee> {

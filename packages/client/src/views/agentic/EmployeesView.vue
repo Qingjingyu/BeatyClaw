@@ -84,7 +84,11 @@ async function createEmployee() {
     await employeesStore.selectEmployee(employee.id)
     showCreateModal.value = false
     resetForm()
-    message.success('数字员工已创建')
+    if (employee.status === 'running' && employee.healthStatus === 'healthy') {
+      message.success('数字员工已创建并启动')
+    } else {
+      message.error('数字员工已创建，但自动启动失败，请在卡片中查看状态')
+    }
   } catch (err) {
     message.error(err instanceof Error ? err.message : String(err))
   }
@@ -228,7 +232,7 @@ async function restoreEmployee(employee: Employee) {
               隐藏
             </NButton>
             <NButton v-if="!employee.deletedAt && (employee.status === 'draft' || employee.status === 'failed')" size="small" @click="deploy(employee)">
-              模拟部署
+              部署
             </NButton>
             <NButton v-else-if="!employee.deletedAt && (employee.status === 'installed' || employee.status === 'stopped')" size="small" @click="start(employee)">
               启动
@@ -269,7 +273,7 @@ async function restoreEmployee(employee: Employee) {
         <div class="modal-actions">
           <NButton @click="showCreateModal = false">取消</NButton>
           <NButton type="primary" :loading="employeesStore.saving" :disabled="!form.name.trim()" @click="createEmployee">
-            创建
+            {{ employeesStore.saving ? '创建并启动中' : '创建并启动' }}
           </NButton>
         </div>
       </template>

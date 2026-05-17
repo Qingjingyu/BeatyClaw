@@ -1,6 +1,6 @@
 import {
   checkEmployeeHealth,
-  createEmployee,
+  createProvisionedEmployee,
   deployEmployee,
   getCurrentEmployee,
   getEmployee,
@@ -45,7 +45,7 @@ export async function detail(ctx: any) {
 }
 
 export async function create(ctx: any) {
-  await handle(ctx, () => createEmployee(body(ctx) as any))
+  await handle(ctx, () => createProvisionedEmployee(body(ctx) as any))
   if (!ctx.status) ctx.status = 201
 }
 
