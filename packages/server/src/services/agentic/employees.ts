@@ -2,12 +2,45 @@ import { mkdir, readFile, writeFile } from 'fs/promises'
 import { join } from 'path'
 import { homedir } from 'os'
 import { randomBytes } from 'node:crypto'
-import { createEmployeeRuntimeAdapter, type EmployeeRuntimeState } from './employee-runtime'
+import {
+  createEmployeeRuntimeAdapter,
+  getRuntimeStatePath,
+  readEmployeeRuntimeState,
+  type EmployeeRuntimeState,
+} from './employee-runtime'
+import {
+  getInstallManifestPath,
+  readEmployeeRuntimeInstallManifest,
+} from './employee-runtime-installer'
 
 export type EmployeeStatus = 'draft' | 'deploying' | 'installed' | 'running' | 'stopped' | 'failed'
 export type EmployeeHealthStatus = 'unknown' | 'provisioning' | 'healthy' | 'stopped' | 'unhealthy'
 export type EmployeeEngineType = 'openclaw' | 'hms' | 'coco' | 'zylos'
 export type EmployeeVisibility = 'visible' | 'hidden'
+
+export interface EmployeeRuntimeInstance {
+  employeeId: string
+  engineType: EmployeeEngineType
+  instanceRoot: string
+  configDir: string
+  dataDir: string
+  logsDir: string
+  workspaceDir: string
+  manifestPath: string
+  installManifestPath: string
+  statePath: string
+  containerName: string
+  runtimeUrl: string
+  port: number | null
+  status: EmployeeStatus
+  healthStatus: EmployeeHealthStatus
+  mode: 'local' | 'process'
+  pid: number | null
+  lastError: string
+  installMode: 'none' | 'placeholder' | 'hermes-gateway' | 'custom'
+  installedAt: string
+  updatedAt: string
+}
 
 export interface Employee {
   id: string
@@ -25,6 +58,7 @@ export interface Employee {
   deletedAt: string | null
   createdAt: string
   updatedAt: string
+  runtimeInstance?: EmployeeRuntimeInstance
 }
 
 export interface EmployeeStore {
@@ -80,6 +114,10 @@ function getEmployeeInstancesRoot(): string {
 
 function getEmployeeInstanceRoot(id: string): string {
   return join(getEmployeeInstancesRoot(), id)
+}
+
+function getEmployeeRuntimeInstanceManifestPath(employee: Employee): string {
+  return join(employee.instanceRoot, 'config', 'runtime-instance.json')
 }
 
 function getEmployeeContainerName(id: string): string {
@@ -199,7 +237,7 @@ async function readStore(): Promise<EmployeeStore> {
 
 async function writeStore(store: EmployeeStore): Promise<EmployeeStore> {
   await mkdir(getEmployeeHome(), { recursive: true })
-  await writeFile(getStorePath(), JSON.stringify(store, null, 2) + '\n', { mode: 0o600 })
+  await writeFile(getStorePath(), JSON.stringify(toStoredStore(store), null, 2) + '\n', { mode: 0o600 })
   return store
 }
 
@@ -207,8 +245,88 @@ export function getEmployeeInstancePaths(employee: Employee): string[] {
   return ['config', 'data', 'logs', 'workspace'].map(name => join(employee.instanceRoot, name))
 }
 
+function toStoredEmployee(employee: Employee): Employee {
+  const { runtimeInstance: _runtimeInstance, ...stored } = employee
+  return stored
+}
+
+function toStoredStore(store: EmployeeStore): EmployeeStore {
+  return {
+    currentEmployeeId: store.currentEmployeeId,
+    employees: store.employees.map(toStoredEmployee),
+  }
+}
+
 async function ensureEmployeeInstanceDirs(employee: Employee): Promise<void> {
   await Promise.all(getEmployeeInstancePaths(employee).map(path => mkdir(path, { recursive: true })))
+}
+
+async function buildEmployeeRuntimeInstance(employee: Employee): Promise<EmployeeRuntimeInstance> {
+  await ensureEmployeeInstanceDirs(employee)
+  const runtimeState = await readEmployeeRuntimeState(employee)
+  const installManifest = await readEmployeeRuntimeInstallManifest(employee)
+  const runtimeInstance: EmployeeRuntimeInstance = {
+    employeeId: employee.id,
+    engineType: employee.engineType,
+    instanceRoot: employee.instanceRoot,
+    configDir: join(employee.instanceRoot, 'config'),
+    dataDir: join(employee.instanceRoot, 'data'),
+    logsDir: join(employee.instanceRoot, 'logs'),
+    workspaceDir: join(employee.instanceRoot, 'workspace'),
+    manifestPath: getEmployeeRuntimeInstanceManifestPath(employee),
+    installManifestPath: getInstallManifestPath(employee),
+    statePath: getRuntimeStatePath(employee),
+    containerName: employee.containerName,
+    runtimeUrl: runtimeState.runtimeUrl || employee.runtimeUrl,
+    port: runtimeState.port ?? employee.port,
+    status: runtimeState.status || employee.status,
+    healthStatus: runtimeState.healthStatus || employee.healthStatus,
+    mode: runtimeState.mode,
+    pid: runtimeState.pid,
+    lastError: runtimeState.lastError,
+    installMode: installManifest?.installMode || 'none',
+    installedAt: installManifest?.installedAt || '',
+    updatedAt: nowIso(),
+  }
+  await writeFile(
+    runtimeInstance.manifestPath,
+    JSON.stringify({
+      employeeId: runtimeInstance.employeeId,
+      engineType: runtimeInstance.engineType,
+      instanceRoot: runtimeInstance.instanceRoot,
+      configDir: runtimeInstance.configDir,
+      dataDir: runtimeInstance.dataDir,
+      logsDir: runtimeInstance.logsDir,
+      workspaceDir: runtimeInstance.workspaceDir,
+      installManifestPath: runtimeInstance.installManifestPath,
+      statePath: runtimeInstance.statePath,
+      containerName: runtimeInstance.containerName,
+      runtimeUrl: runtimeInstance.runtimeUrl,
+      port: runtimeInstance.port,
+      status: runtimeInstance.status,
+      healthStatus: runtimeInstance.healthStatus,
+      mode: runtimeInstance.mode,
+      installMode: runtimeInstance.installMode,
+      installedAt: runtimeInstance.installedAt,
+      updatedAt: runtimeInstance.updatedAt,
+    }, null, 2) + '\n',
+    { mode: 0o600 },
+  )
+  return runtimeInstance
+}
+
+async function enrichEmployee(employee: Employee): Promise<Employee> {
+  return {
+    ...employee,
+    runtimeInstance: await buildEmployeeRuntimeInstance(employee),
+  }
+}
+
+async function enrichStore(store: EmployeeStore): Promise<EmployeeStore> {
+  return {
+    currentEmployeeId: store.currentEmployeeId,
+    employees: await Promise.all(store.employees.map(enrichEmployee)),
+  }
 }
 
 function requireName(name: unknown): string {
@@ -229,8 +347,8 @@ function findEmployeeOrThrow(store: EmployeeStore, id: string): Employee {
 
 export async function listEmployees(): Promise<EmployeeStore> {
   const store = await readStore()
-  await Promise.all(store.employees.map(ensureEmployeeInstanceDirs))
-  return writeStore(store)
+  const enriched = await enrichStore(store)
+  return writeStore(enriched)
 }
 
 export async function getCurrentEmployee(): Promise<Employee> {

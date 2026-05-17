@@ -47,11 +47,29 @@ describe('Employees service', () => {
       port: null,
       runtimeUrl: '',
       healthStatus: 'unknown',
+      runtimeInstance: {
+        employeeId: 'default',
+        engineType: 'openclaw',
+        instanceRoot: join(authHome, 'employees', 'default'),
+        configDir: join(authHome, 'employees', 'default', 'config'),
+        dataDir: join(authHome, 'employees', 'default', 'data'),
+        logsDir: join(authHome, 'employees', 'default', 'logs'),
+        workspaceDir: join(authHome, 'employees', 'default', 'workspace'),
+        installMode: 'none',
+        status: 'draft',
+        healthStatus: 'unknown',
+      },
     })
     await expect(stat(join(authHome, 'employees', 'default', 'config'))).resolves.toBeTruthy()
     await expect(stat(join(authHome, 'employees', 'default', 'data'))).resolves.toBeTruthy()
     await expect(stat(join(authHome, 'employees', 'default', 'logs'))).resolves.toBeTruthy()
     await expect(stat(join(authHome, 'employees', 'default', 'workspace'))).resolves.toBeTruthy()
+    expect(JSON.parse(await readFile(join(authHome, 'employees', 'default', 'config', 'runtime-instance.json'), 'utf-8'))).toMatchObject({
+      employeeId: 'default',
+      engineType: 'openclaw',
+      instanceRoot: join(authHome, 'employees', 'default'),
+      installMode: 'none',
+    })
   })
 
   it('creates, selects, deploys, starts, and stops an employee', async () => {
@@ -129,6 +147,15 @@ describe('Employees service', () => {
       containerName: `beautyclaw-employee-${employee.id}`,
       visibility: 'visible',
       deletedAt: null,
+      runtimeInstance: {
+        employeeId: employee.id,
+        engineType: 'hms',
+        instanceRoot: join(authHome, 'employees', employee.id),
+        installMode: 'placeholder',
+        status: 'running',
+        healthStatus: 'healthy',
+        mode: 'process',
+      },
     })
     await expect(stat(join(employee.instanceRoot, 'config'))).resolves.toBeTruthy()
     await expect(stat(join(employee.instanceRoot, 'workspace'))).resolves.toBeTruthy()
@@ -137,6 +164,18 @@ describe('Employees service', () => {
       engineType: 'hms',
       status: 'running',
       healthStatus: 'healthy',
+    })
+    expect(JSON.parse(await readFile(join(employee.instanceRoot, 'config', 'runtime-install.json'), 'utf-8'))).toMatchObject({
+      employeeId: employee.id,
+      engineType: 'hms',
+      installMode: 'placeholder',
+    })
+    expect(JSON.parse(await readFile(join(employee.instanceRoot, 'config', 'runtime-instance.json'), 'utf-8'))).toMatchObject({
+      employeeId: employee.id,
+      engineType: 'hms',
+      status: 'running',
+      healthStatus: 'healthy',
+      installMode: 'placeholder',
     })
   })
 

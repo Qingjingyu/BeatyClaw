@@ -5,6 +5,30 @@ export type EmployeeHealthStatus = 'unknown' | 'provisioning' | 'healthy' | 'sto
 export type EmployeeEngineType = 'openclaw' | 'hms' | 'coco' | 'zylos'
 export type EmployeeVisibility = 'visible' | 'hidden'
 
+export interface EmployeeRuntimeInstance {
+  employeeId: string
+  engineType: EmployeeEngineType
+  instanceRoot: string
+  configDir: string
+  dataDir: string
+  logsDir: string
+  workspaceDir: string
+  manifestPath: string
+  installManifestPath: string
+  statePath: string
+  containerName: string
+  runtimeUrl: string
+  port: number | null
+  status: EmployeeStatus
+  healthStatus: EmployeeHealthStatus
+  mode: 'local' | 'process'
+  pid: number | null
+  lastError: string
+  installMode: 'none' | 'placeholder' | 'hermes-gateway' | 'custom'
+  installedAt: string
+  updatedAt: string
+}
+
 export interface Employee {
   id: string
   name: string
@@ -21,6 +45,7 @@ export interface Employee {
   deletedAt: string | null
   createdAt: string
   updatedAt: string
+  runtimeInstance?: EmployeeRuntimeInstance
 }
 
 export interface EmployeeListResponse {
